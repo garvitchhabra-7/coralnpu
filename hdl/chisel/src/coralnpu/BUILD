@@ -866,6 +866,42 @@ verilog_zip_bundle(
     lib = ":core_mini_axi_cc_library_verilog",
 )
 
+verilog_zip_bundle(
+    name = "rvv_core_mini_axi_bundle",
+    lib = ":rvv_core_mini_axi_cc_library_verilog",
+)
+
+genrule(
+    name = "rvv_core_mini_axi_split_synthesis_filelist",
+    srcs = [":rvv_core_mini_axi_cc_library_emit_verilog"],
+    outs = ["filelist_synth.f"],
+    cmd = """
+python3 -c "
+import zipfile
+zf = next(f for f in '$(locations :rvv_core_mini_axi_cc_library_emit_verilog)'.split() if f.endswith('.zip'))
+with zipfile.ZipFile(zf) as z:
+    lines = z.read('filelist.f').decode().splitlines()
+lines = [l for l in lines if not l.startswith('verification/')]
+open('$@', 'w').write('\\n'.join(lines) + '\\n')
+"
+""",
+)
+
+genrule(
+    name = "rvv_core_mini_axi_synthesis",
+    srcs = [":rvv_core_mini_axi_cc_library_emit_verilog"],
+    outs = ["RvvCoreMiniAxi_synth.sv"],
+    cmd = """
+python3 -c "
+import re
+sv = next(f for f in '$(locations :rvv_core_mini_axi_cc_library_emit_verilog)'.split() if f.endswith('.sv'))
+content = open(sv).read()
+content = re.sub(r'\\\\bbind\\\\b[^;]+;', '', content, flags=re.DOTALL)
+open('$@', 'w').write(content)
+"
+""",
+)
+
 chisel_cc_library(
     name = "dbus2axi_cc_library",
     chisel_lib = ":coralnpu",

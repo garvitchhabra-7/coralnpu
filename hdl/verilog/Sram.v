@@ -180,6 +180,63 @@ module Sram #(
     end
   end
 
+    
+  `elsif GF22_TUD
+  ///////////////////////////
+  ////// GF22 TUD SRAM //////
+  ///////////////////////////
+  wire [127:0] nwmask;
+  genvar i_wmask;
+  generate
+    for (i_wmask = 0; i_wmask < 16; i_wmask = i_wmask + 1) begin : gen_wmask
+      assign nwmask[8*i_wmask+:8] = {8{wmask[i_wmask]}};
+    end
+  endgenerate
+    GF22_TUD_2048x128 u_sram (
+        .Q(rdata),
+        .ADR(addr),
+        .D(wdata),
+        .WEM(nwmask),
+        .WE(write),
+        .ME(enable),
+        .CLK(clock),
+        .TEST1(1'b0),
+        .TEST_RNM(1'b0),
+        .RME(1'b0),
+        .RM(4'b0),
+        .WA(2'b0),
+        .WPULSE(3'b0),
+        .LS(1'b0),
+        .BC0(1'b0),
+        .BC1(1'b0),
+        .BC2(1'b0)
+    );
+  end else if (NUM_ENTRIES == 512) begin
+    GF22_TUD_512x128 u_sram (
+        .Q(rdata),
+        .ADR(addr),
+        .D(wdata),
+        .WEM(nwmask),
+        .WE(write),
+        .ME(enable),
+        .CLK(clock),
+        .TEST1(1'b0),
+        .TEST_RNM(1'b0),
+        .RME(1'b0),
+        .RM(4'b0),
+        .WA(2'b0),
+        .WPULSE(3'b0),
+        .LS(1'b0),
+        .BC0(1'b0),
+        .BC1(1'b0),
+        .BC2(1'b0)
+    );
+  end else begin
+    initial begin
+      $error("Unsupported SRAM size for GF22_TUD: %d", NUM_ENTRIES);
+    end
+  end
+
   reg rvalid_reg;
   always @(posedge clock) rvalid_reg <= enable;
   assign rvalid = rvalid_reg;

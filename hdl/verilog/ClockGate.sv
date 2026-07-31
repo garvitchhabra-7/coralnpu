@@ -44,6 +44,14 @@ module ClockGate (
       .SE (te),
       .CK (clk_i)
   );
+`elsif GF22_TUD
+  // GF22 TUD Specific ClockGate (LVT)
+  UDBLVT20_CKGTPLT_V5_8 u_cg (
+    .CK(clk_i),
+    .EN(enable),
+    .SE(te),
+    .Q(clk_o)
+  );
 `elsif USE_GF22_116A
   // GF22 116A Specific ClockGate -- MUST BE BEFORE USE_GF22 (USE_GF22 must also be set for SRAMs)
   UDBSLT20_CKGTPLT_V5_8 u_cg (

@@ -59,12 +59,20 @@ VCS_BUILD_ARGS = [
     "-O3",
     "-Xkeyopt=rtopt",
     "+vpi+1",
+    "-CFLAGS",
+    "-I../hdl/verilog",
+    "../hdl/verilog/sram_backdoor.cc",
     # TODO(davidgao): enable this when ready
     # "-xprop=../tests/cocotb/xprop.cfg",
 ]
 
 VCS_TEST_ARGS = [
     "+vcs+lic+wait",
+    "+vcs+fsdbon",
+    "+fsdb+mda",
+    "+fsdb+struct",
+    "-cm",
+    "line+cond+tgl+branch+assert",
 ]
 
 VCS_DEFINES = {

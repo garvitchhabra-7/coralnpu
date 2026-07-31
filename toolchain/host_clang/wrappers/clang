@@ -1,2 +1,5 @@
 #!/bin/bash
-exec clang "$@"
+exec clang -nostdinc++ \
+  -isystem /usr/include/c++/11 \
+  -isystem /usr/include/c++/11/x86_64-redhat-linux \
+  "$@"
