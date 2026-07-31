@@ -49,6 +49,8 @@ cc_toolchain_config(
     # need to cover the roots that host GCC / Clang actually use.
     cxx_builtin_include_directories = [
         "/usr/include",
+        "/usr/include/c++/11",
+        "/usr/include/c++/11/x86_64-redhat-linux",
         "/usr/local/include",
         "/usr/lib",
     ],
