@@ -647,6 +647,13 @@ VIVADO_HOOKS = [
     "pblock_u_ddr.tcl",
 ]
 
+VIVADO_HOOKS_VCU118 = [
+    "vivado_setup_hooks.tcl",
+    "vivado_hook_write_bitstream_post.tcl",
+    "check_pin_assignments.tcl",
+    "vivado_pre_opt_hooks_vcu118.tcl",
+]
+
 NEXUS_COMMON_SRCS = CORALNPU_SOC_SRCS_COMMON + [
     "pins_nexus.xdc",
 ] + VIVADO_HOOKS + DDR_SRCS
@@ -721,6 +728,59 @@ template_rule(
         ("_default_rom", "_vector_normal_rom"),
     ]
 ]
+DDR_VCU118_CORES = [
+    "//fpga/ip/ddr4_vcu118:ddr4_vcu118.core",
+]
+
+DDR_VCU118_SRCS = [
+    "//fpga/ip/ddr4_vcu118:rtl_files",
+]
+
+# VCU118 targets
+VCU118_COMMON_SRCS = CORALNPU_SOC_SRCS_COMMON + [
+    "pins_vcu118.xdc",
+] + VIVADO_HOOKS_VCU118 + DDR_VCU118_SRCS
+
+VCU118_COMMON_CORES = [
+    ":chip_vcu118.core",
+    "//fpga/ip/i2c_master:i2c_master.core",
+    "//fpga/ip/ispyocto:ispyocto_core",
+] + DDR_VCU118_CORES
+
+_VCU118_NAME_MAP = {
+    "build_chip_vcu118_" + build_type + m["suffix"] + b["suffix"]: {
+        "cores": CORALNPU_SOC_CORES_COMMON + VCU118_COMMON_CORES + [m["chisel_core"]],
+        "srcs": VCU118_COMMON_SRCS + [m["chisel_rtl"]] + ([m["rom_vmem"]] if b["is_rom"] else []),
+        "flags": [
+            "--ClockFrequencyMhz=" + _CLOCK_FREQUENCY_MHZ,
+            "--IspClockFrequencyMhz=" + _ISP_CLOCK_FREQUENCY_MHZ,
+            "--SpimClockFrequencyMhz=" + _SPIM_CLOCK_FREQUENCY_MHZ,
+            "--ItcmSizeKBytes=" + m["itcm"],
+            "--DtcmSizeKBytes=" + m["dtcm"],
+        ] + ([
+            "--EnableAutoboot=1",
+            "--MemInitFile=" + m["rom_vmem_file"],
+            "--BootAddr=268435456",
+        ] if b["is_rom"] else []) + (["--pnr=none"] if build_type == "synth_only" else []),
+    }
+    for m in _MEM_CONFIGS
+    for b in _BOOT_MODES
+    for build_type in [
+        "bitstream",
+        "synth_only",
+    ]
+}
+
+template_rule(
+    fusesoc_build,
+    _VCU118_NAME_MAP,
+    output_groups = {
+        "all": ["com.google.coralnpu_fpga_chip_vcu118_0.1/"],
+    },
+    systems = ["com.google.coralnpu:fpga:chip_vcu118:0.1"],
+    tags = ["manual"],
+    target = "synth",
+)
 
 filegroup(
     name = "chip_verilator_binary",

@@ -60,6 +60,13 @@ set_property -name {STEPS.OPT_DESIGN.ARGS.MORE OPTIONS} -value {-muxf_remap} -ob
 set_property STEPS.PLACE_DESIGN.ARGS.DIRECTIVE SSI_BalanceSLRs [get_runs impl_1]
 set_property STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE ExploreWithAggressiveHoldFix [get_runs impl_1]
 set_property STEPS.ROUTE_DESIGN.ARGS.DIRECTIVE MoreGlobalIterations [get_runs impl_1]
+# Register the pre-optimization hooks (pin check, pblocks, etc.)
+# Use board-specific hooks when available (VCU118 skips ISP/DDR pblocks).
+if {[file exists "${workroot}/vivado_pre_opt_hooks_vcu118.tcl"]} {
+    set_property STEPS.OPT_DESIGN.TCL.PRE "${workroot}/vivado_pre_opt_hooks_vcu118.tcl" [get_runs impl_1]
+} else {
+    set_property STEPS.OPT_DESIGN.TCL.PRE "${workroot}/vivado_pre_opt_hooks.tcl" [get_runs impl_1]
+}
 
 # Enable post-route physical optimization to clean up any remaining hold slack
 set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED true [get_runs impl_1]
@@ -71,4 +78,9 @@ set_param route.enableGlobalHoldIter 1
 # If we see the Xilinx DDR core, register the post-bitstream hook to stitch the calibration FW.
 if {[file exists "${workroot}/src/xilinx_ddr4_0_0.1_0"]} {
     set_property STEPS.WRITE_BITSTREAM.TCL.POST "${workroot}/vivado_hook_write_bitstream_post.tcl" [get_runs impl_1]
+}
+
+# VCU118 DDR4: load pre-synthesized IP checkpoints and constraints if present.
+if {[file exists "${workroot}/vivado_ddr4_vcu118_setup.tcl"]} {
+    source "${workroot}/vivado_ddr4_vcu118_setup.tcl"
 }
