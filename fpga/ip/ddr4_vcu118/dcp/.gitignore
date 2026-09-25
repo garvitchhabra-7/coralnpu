@@ -1,0 +1,3 @@
+# DCPs contain synthesized Xilinx IP — do not commit to public repos.
+# See GENERATING_DDR4_IP.md for instructions to generate them locally.
+*.dcp

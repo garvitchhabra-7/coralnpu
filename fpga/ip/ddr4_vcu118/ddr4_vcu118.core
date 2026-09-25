@@ -1,0 +1,47 @@
+CAPI=2:
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: "coralnpuv2:ip:ddr4_vcu118:0.1"
+description: "VCU118 DDR4 block design wrapper (MIG + SmartConnect, 256-bit AXI slave)"
+virtual:
+  - xilinx:virtual:ddr4_0
+filesets:
+  rtl:
+    files:
+      - rtl/ddr_system_bd.v
+      - rtl/ddr_system_bd_wrapper.v
+    file_type: verilogSource
+
+  dcp_files:
+    files:
+      - dcp/ddr_system_bd_ddr4_0_0.dcp: { file_type: user, copyto: ddr4_vcu118_dcp/ddr_system_bd_ddr4_0_0.dcp }
+      - dcp/ddr_system_bd_smartconnect_0_0.dcp: { file_type: user, copyto: ddr4_vcu118_dcp/ddr_system_bd_smartconnect_0_0.dcp }
+
+  xdc_files:
+    files:
+      - xdc/ddr_system_bd_ddr4_0_0.xdc: { file_type: user, copyto: ddr4_vcu118_xdc/ddr_system_bd_ddr4_0_0.xdc }
+      - xdc/ddr4_vcu118_pins.xdc: { file_type: xdc }
+
+  tcl:
+    files:
+      - vivado_ddr4_vcu118_setup.tcl: { file_type: user, copyto: vivado_ddr4_vcu118_setup.tcl }
+
+targets:
+  default:
+    filesets:
+      - rtl
+      - dcp_files
+      - xdc_files
+      - tcl
