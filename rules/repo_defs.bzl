@@ -12,12 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Common repository definitions shared between WORKSPACE and Bzlmod extensions.
-
-This file serves as the Single Source of Truth for non-BCR external dependencies
-so that URLs, shas, and patches remain synchronized between legacy WORKSPACE and
-Bzlmod module extensions.
-"""
+"""Repository definitions for non-BCR external dependencies managed via Bzlmod."""
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
@@ -56,6 +51,31 @@ def define_pybind11_abseil():
         sha256 = "26328a74f367208ae8d490dc640030111df4ba0869619c6445bb4a1c5964e2a7",
     )
 
+def _svdpi_repo_impl(rctx):
+    rctx.download(
+        url = "https://raw.githubusercontent.com/verilator/verilator/v5.028/include/vltstd/svdpi.h",
+        output = "include/svdpi.h",
+        sha256 = "2528c8e529b66dd8e795c8a0fee326166cc51f7dee8fc6a0c6c930534fc780a6",
+    )
+    rctx.symlink("include/svdpi.h", "file/svdpi.h")
+    rctx.file("BUILD.bazel", """package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "svdpi",
+    hdrs = ["include/svdpi.h"],
+    includes = ["include"],
+)
+
+filegroup(
+    name = "file",
+    srcs = ["file/svdpi.h"],
+)
+""")
+
+svdpi_repo = repository_rule(
+    implementation = _svdpi_repo_impl,
+)
+
 def define_mpact_repos():
     """Defines MPACT and CoralNPU-MPACT dependencies."""
     maybe(
@@ -87,6 +107,7 @@ def define_mpact_repos():
             "@coralnpu_hw//third_party/coralnpu_mpact:0003-Hardwire-mtvec-direct-mode.patch",
             "@coralnpu_hw//third_party/coralnpu_mpact:0004-Fix-mpact-riscv-includes.patch",
             "@coralnpu_hw//third_party/coralnpu_mpact:0005-coralnpu-mepc-mask.patch",
+            "@coralnpu_hw//third_party/coralnpu_mpact:0006-Fix-svdpi-includes.patch",
         ],
         patch_args = ["-p1"],
     )
@@ -135,11 +156,8 @@ def define_mpact_repos():
     )
 
     maybe(
-        http_file,
+        svdpi_repo,
         name = "svdpi_h_file",
-        downloaded_file_path = "svdpi.h",
-        sha256 = "2528c8e529b66dd8e795c8a0fee326166cc51f7dee8fc6a0c6c930534fc780a6",
-        urls = ["https://raw.githubusercontent.com/verilator/verilator/v5.028/include/vltstd/svdpi.h"],
     )
 
 def _tflm_pip_deps_compat_impl(rctx):
@@ -147,13 +165,62 @@ def _tflm_pip_deps_compat_impl(rctx):
     rctx.file("BUILD.bazel", "package(default_visibility = ['//visibility:public'])\n")
     rctx.file("requirements.bzl", """
 def requirement(name):
-    return "@tflm_pip_deps//" + name + ":pkg"
+    clean_name = name.replace("-", "_").replace(".", "_").lower()
+    return "@coralnpu_pip_deps_" + clean_name + "//:pkg"
 
 all_requirements = []
 """)
 
 tflm_pip_deps_compat = repository_rule(
     implementation = _tflm_pip_deps_compat_impl,
+)
+
+def _ot_python_deps_compat_impl(rctx):
+    rctx.file("WORKSPACE", "workspace(name = 'ot_python_deps')\n")
+    rctx.file("BUILD.bazel", "package(default_visibility = ['//visibility:public'])\n")
+    rctx.file("requirements.bzl", """
+def requirement(name):
+    clean_name = name.replace("-", "_").replace(".", "_").lower()
+    return "@coralnpu_pip_deps_" + clean_name + "//:pkg"
+
+all_requirements = [
+    requirement("argcomplete"),
+    requirement("attrs"),
+    requirement("edalize"),
+    requirement("fastjsonschema"),
+    requirement("fusesoc"),
+    requirement("hjson"),
+    requirement("jinja2"),
+    requirement("mako"),
+    requirement("markupsafe"),
+    requirement("okonomiyaki"),
+    requirement("packaging"),
+    requirement("pyelftools"),
+    requirement("pyparsing"),
+    requirement("pyyaml"),
+    requirement("simplesat"),
+]
+""")
+
+ot_python_deps_compat = repository_rule(
+    implementation = _ot_python_deps_compat_impl,
+)
+
+def _python311_compat_impl(rctx):
+    rctx.file("WORKSPACE", "workspace(name = 'python311_x86_64-unknown-linux-gnu')\n")
+    rctx.file("BUILD.bazel", """package(default_visibility = ["//visibility:public"])
+alias(
+    name = "python",
+    actual = "@@rules_python++python+python_3_11_6_x86_64-unknown-linux-gnu//:python",
+)
+alias(
+    name = "files",
+    actual = "@@rules_python++python+python_3_11_6_x86_64-unknown-linux-gnu//:files",
+)
+""")
+
+python311_compat = repository_rule(
+    implementation = _python311_compat_impl,
 )
 
 def _flatbuffers_repo_impl(rctx):
@@ -270,9 +337,12 @@ def define_fpga_repos():
     maybe(
         http_archive,
         name = "ispyocto",
-        urls = ["https://opensecura.googlesource.com/3p/ip/isp/+archive/d53dc0e0ce2605cea2e3b3fc5b97e9dd40f8d55a.tar.gz"],
+        urls = [
+            "https://storage.googleapis.com/shodan-public-artifacts/isp-d53dc0e0ce2605cea2e3b3fc5b97e9dd40f8d55a.tar.gz",
+            "https://opensecura.googlesource.com/3p/ip/isp/+archive/d53dc0e0ce2605cea2e3b3fc5b97e9dd40f8d55a.tar.gz",
+        ],
         build_file = "@coralnpu_hw//fpga/ip/ispyocto:ispyocto.BUILD",
-        sha256 = "",
+        sha256 = "3a8a976451f7eda0c42d027460ae0b65e485bb9068405b9186eaa991aa740972",
         patch_cmds = [
             "rm -f ispyocto/BUILD axi2sramcrs/BUILD ispyocto/rtl/ispyocto_filelist.txt",
         ],
@@ -436,8 +506,8 @@ filegroup(
         http_archive,
         name = "riscv_isa_sim",
         build_file = "@coralnpu_hw//third_party:spike.BUILD",
-        sha256 = "850f3c736f98536e306b7cf070b07996fb557014e2150353ec0118efac14674d",
-        strip_prefix = "riscv-isa-sim-fd72ee2d3e0d1703451c446d467387ff0576e492",
+        sha256 = "064f4c1f22005899fa5106b822bfdc7034ffc9babc2f5821771589047f028a66",
+        strip_prefix = "riscv-isa-sim-93a10ae685ac85bd3d8a62054f8f180a4f76fc82",
         patches = [
             "@coralnpu_hw//third_party/spike:0001-Add-mpause.patch",
             "@coralnpu_hw//third_party/spike:0002-Coral-Deviations.patch",
@@ -445,9 +515,11 @@ filegroup(
             "@coralnpu_hw//third_party/spike:0004-Add-custom-CoralNPU-CSRs-and-update-MVENDORID-MARCHI.patch",
             "@coralnpu_hw//third_party/spike:0005-Force-logging-in-vcompress.patch",
             "@coralnpu_hw//third_party/spike:0006-Hardwire-misa-as-read-only-WARL.patch",
+            "@coralnpu_hw//third_party/spike:0007-Rename-yield-macro-avoid-boost-std-conflict.patch",
+            "@coralnpu_hw//third_party/spike:0008-Link-libstdc-explicitly-in-LIBS.patch",
         ],
         patch_args = ["-p1"],
         urls = [
-            "https://github.com/riscv-software-src/riscv-isa-sim/archive/fd72ee2d3e0d1703451c446d467387ff0576e492.tar.gz",
+            "https://github.com/riscv-software-src/riscv-isa-sim/archive/93a10ae685ac85bd3d8a62054f8f180a4f76fc82.tar.gz",
         ],
     )
