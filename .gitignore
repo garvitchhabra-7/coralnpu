@@ -32,3 +32,5 @@ uvm_regression_*.zip
 dispatch.log
 
 temp/
+.ai-pod/
+master.xdc
