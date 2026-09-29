@@ -17,10 +17,11 @@ module chip_vcu118 #(
     parameter int ClockFrequencyMhz = 50,
     parameter int IspClockFrequencyMhz = 10,
     parameter int SpimClockFrequencyMhz = 100,
-    parameter int BootAddr = 0,
     parameter int EnableAutoboot = 0,
     parameter int ItcmSizeKBytes = 8,
-    parameter int DtcmSizeKBytes = 32
+    parameter int DtcmSizeKBytes = 32,
+    parameter int AddrWidth = 32,
+    parameter logic [AddrWidth-1:0] BootAddr = 0
 ) (
     input clk_p_i,
     input clk_n_i,
@@ -33,11 +34,8 @@ module chip_vcu118 #(
     output logic spim_csb_o,
     output logic spim_mosi_o,
     input spim_miso_i,
-    output logic spim_flash_sclk_o,
-    output logic spim_flash_csb_o,
-    output logic spim_flash_mosi_o,
-    input spim_flash_miso_i,
-    output logic spim_flash_rst_no,
+    // SPI flash ports removed: VCU118 has no flash wired and PMOD0 has no pins
+    // left for CS/RESET. The SPI flash master is tied off below (ROM boot unused).
     // GPIO removed: VCU118 DIP switches are in HP banks (72/73) which don't support LVCMOS12.
     output [1 : 0] uart_tx_o,
     input [1 : 0] uart_rx_i,
@@ -72,6 +70,12 @@ module chip_vcu118 #(
     input td_i,
     output td_o
 );
+
+  // VCU118 CPU_RESET (L19) is an active-HIGH push button (board.xml rst_polarity=1,
+  // "CPU Reset Push Button, Active High"). Invert at the pad so the rest of the design
+  // sees an active-low reset, matching chip_nexus.sv conventions.
+  logic rst_n_pad;
+  assign rst_n_pad = ~rst_ni;
 
   logic clk;
   logic rst_n;
@@ -114,7 +118,7 @@ module chip_vcu118 #(
   //================================================================
   //== Combined Reset Logic for DDR4 MIG
   //================================================================
-  assign mig_sys_rst = (~locked) | (~eos) | (~rst_ni);
+  assign mig_sys_rst = (~locked) | (~eos) | (~rst_n_pad);
 
   top_pkg::uart_sideband_i_t [1 : 0] uart_sideband_i;
   top_pkg::uart_sideband_o_t [1 : 0] uart_sideband_o;
@@ -150,6 +154,8 @@ module chip_vcu118 #(
   logic c0_ddr4_aresetn;
   logic [0:0] c0_ddr4_s_axi_awid;
   logic [33:0] c0_ddr4_s_axi_awaddr;
+  logic [AddrWidth-1:0] soc_ddr_mem_axi_aw_bits_addr;
+  logic [AddrWidth-1:0] soc_ddr_mem_axi_ar_bits_addr;
   logic [7:0] c0_ddr4_s_axi_awlen;
   logic [2:0] c0_ddr4_s_axi_awsize;
   logic [1:0] c0_ddr4_s_axi_awburst;
@@ -277,8 +283,8 @@ module chip_vcu118 #(
   ) i_clkgen (
       .clk_p_i(clk_p_i),
       .clk_n_i(clk_n_i),
-      .rst_ni(rst_ni),
-      .srst_ni(rst_ni),
+      .rst_ni(rst_n_pad),
+      .srst_ni(rst_n_pad),
       .clk_main_o(clk),
       .clk_isp_o(clk_isp),
       .clk_spim_o(clk_spim),
@@ -321,7 +327,8 @@ module chip_vcu118 #(
       .SpimClockFrequencyMhz(SpimClockFrequencyMhz),
       .EnableAutoboot(EnableAutoboot),
       .ItcmSizeKBytes(ItcmSizeKBytes),
-      .DtcmSizeKBytes(DtcmSizeKBytes)
+      .DtcmSizeKBytes(DtcmSizeKBytes),
+      .AddrWidth(AddrWidth)
   ) i_coralnpu_soc (
       .clk_i(clk),
       .clk_isp_i(clk_isp),
@@ -336,12 +343,12 @@ module chip_vcu118 #(
       .spim_miso_i(spim_miso_i),
       .spim_clk_i(clk_spim),
       .boot_addr_i(BootAddr),
-      .spim_flash_sclk_o(spim_flash_sclk_o),
-      .spim_flash_csb_o(spim_flash_csb_o),
-      .spim_flash_mosi_o(spim_flash_mosi_o),
-      .spim_flash_miso_i(spim_flash_miso_i),
+      .spim_flash_sclk_o(),
+      .spim_flash_csb_o(),
+      .spim_flash_mosi_o(),
+      .spim_flash_miso_i(1'b1),
       .spim_flash_clk_i(clk_spim),
-      .spim_flash_rst_no(spim_flash_rst_no),
+      .spim_flash_rst_no(),
       .gpio_o(gpio_out),
       .gpio_en_o(gpio_en),
       .gpio_i(gpio_in),
@@ -390,7 +397,7 @@ module chip_vcu118 #(
       .io_ddr_ctrl_axi_r_bits_resp(c0_ddr4_s_axi_ctrl_rresp),
       .io_ddr_mem_axi_aw_valid(c0_ddr4_s_axi_awvalid),
       .io_ddr_mem_axi_aw_ready(c0_ddr4_s_axi_awready),
-      .io_ddr_mem_axi_aw_bits_addr(c0_ddr4_s_axi_awaddr[31:0]),
+      .io_ddr_mem_axi_aw_bits_addr(soc_ddr_mem_axi_aw_bits_addr),
       .io_ddr_mem_axi_aw_bits_prot(c0_ddr4_s_axi_awprot),
       .io_ddr_mem_axi_aw_bits_id(c0_ddr4_s_axi_awid),
       .io_ddr_mem_axi_aw_bits_len(c0_ddr4_s_axi_awlen),
@@ -410,7 +417,7 @@ module chip_vcu118 #(
       .io_ddr_mem_axi_b_bits_resp(c0_ddr4_s_axi_bresp),
       .io_ddr_mem_axi_ar_valid(c0_ddr4_s_axi_arvalid),
       .io_ddr_mem_axi_ar_ready(c0_ddr4_s_axi_arready),
-      .io_ddr_mem_axi_ar_bits_addr(c0_ddr4_s_axi_araddr[31:0]),
+      .io_ddr_mem_axi_ar_bits_addr(soc_ddr_mem_axi_ar_bits_addr),
       .io_ddr_mem_axi_ar_bits_prot(c0_ddr4_s_axi_arprot),
       .io_ddr_mem_axi_ar_bits_id(c0_ddr4_s_axi_arid),
       .io_ddr_mem_axi_ar_bits_len(c0_ddr4_s_axi_arlen),
@@ -435,5 +442,8 @@ module chip_vcu118 #(
       .io_dm_rsp_bits_data(dm_rsp.data),
       .io_dm_rsp_bits_op(dm_rsp.resp)
   );
+
+  assign c0_ddr4_s_axi_awaddr = 34'(soc_ddr_mem_axi_aw_bits_addr);
+  assign c0_ddr4_s_axi_araddr = 34'(soc_ddr_mem_axi_ar_bits_addr);
 
 endmodule

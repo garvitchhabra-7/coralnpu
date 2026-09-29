@@ -41,11 +41,12 @@ create_generated_clock -name clk_aon [get_pin i_clkgen/i_clkgen/pll/CLKOUT4]
 
 # -----------------------------------------------------------------------------
 # Reset — VCU118 CPU_RESET button
-# board.xml shows rst_polarity=1 (active high on board), chip_vcu118.sv
-# inverts at the pad so the rest of the design sees active-low rst_ni.
+# board.xml shows rst_polarity=1 (active HIGH on board). The port keeps the
+# name rst_ni, but chip_vcu118.sv inverts it at the pad (rst_n_pad = ~rst_ni).
+# PULLDOWN keeps the idle (unpressed = run) level defined.
 # Verified: part0_pins.xml CPU_RESET=L19 LVCMOS12
 # -----------------------------------------------------------------------------
-set_property -dict { PACKAGE_PIN L19 IOSTANDARD LVCMOS12 } [get_ports { rst_ni }];
+set_property -dict { PACKAGE_PIN L19 IOSTANDARD LVCMOS12 PULLTYPE PULLDOWN } [get_ports { rst_ni }];
 
 # -----------------------------------------------------------------------------
 # JTAG — PMOD0 (J53) pins 0-4, Bank 67, LVCMOS18
@@ -75,17 +76,10 @@ set_property -dict { PACKAGE_PIN L31 IOSTANDARD LVCMOS12 } [get_ports { spim_csb
 set_property -dict { PACKAGE_PIN M31 IOSTANDARD LVCMOS12 } [get_ports { spim_mosi_o }];
 set_property -dict { PACKAGE_PIN R29 IOSTANDARD LVCMOS12 } [get_ports { spim_miso_i }];
 
-# SPI Flash — PMOD0 (J53) pins 5-7, Bank 67
-# Verified: master.xdc (XTP450) PMOD0_5-7_LS
-# SCLK/MOSI/MISO on remaining PMOD0 pins; CS and RESET on-board if available.
-set_property -dict { PACKAGE_PIN AU16 IOSTANDARD LVCMOS18 } [get_ports { spim_flash_sclk_o }];
-set_property -dict { PACKAGE_PIN AT15 IOSTANDARD LVCMOS18 PULLTYPE PULLUP } [get_ports { spim_flash_mosi_o }];
-set_property -dict { PACKAGE_PIN AT16 IOSTANDARD LVCMOS18 PULLTYPE PULLUP } [get_ports { spim_flash_miso_i }];
-# CS and RESET — no more PMOD pins available. Using nearby Bank 67 pins
-# from GPIO push buttons for now. Not critical — SPI flash not needed for demo.
-# TODO: Assign proper pins if SPI flash boot is needed.
-set_property -dict { PACKAGE_PIN BD23 IOSTANDARD LVCMOS18 } [get_ports { spim_flash_csb_o }];
-set_property -dict { PACKAGE_PIN BF22 IOSTANDARD LVCMOS18 } [get_ports { spim_flash_rst_no }];
+# SPI Flash — not exposed on VCU118. PMOD0 has only 3 pins left after JTAG, so
+# CS/RESET previously landed on push buttons BD23 (GPIO_SW_C) / BF22 (GPIO_SW_W),
+# driving outputs into active-high switches. No flash is wired, so the ports were
+# removed from chip_vcu118.sv and the SPI flash master is tied off internally.
 
 # -----------------------------------------------------------------------------
 # Non-GCIO clock routing overrides
@@ -103,13 +97,15 @@ set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets -of_objects [get_ports spi_cl
 # Verified: part0_pins.xml USB_UART_TX=BB21, USB_UART_RX=AW25
 # Naming is from FPGA perspective: TX=FPGA output to host, RX=FPGA input
 # -----------------------------------------------------------------------------
-set_property -dict { PACKAGE_PIN BB21 IOSTANDARD LVCMOS18 } [get_ports { uart_tx_o[0] }];
-set_property -dict { PACKAGE_PIN AW25 IOSTANDARD LVCMOS18 } [get_ports { uart_rx_i[0] }];
-# UART1 — no second channel on VCU118 USB-UART bridge.
+# UART1 is the console: fpga/sw/uart.c writes to UART1_BASE (0x40010000), and
+# Nexus also puts uart[1] on its USB UART. So uart[1] gets the real TX/RX.
+set_property -dict { PACKAGE_PIN BB21 IOSTANDARD LVCMOS18 } [get_ports { uart_tx_o[1] }];
+set_property -dict { PACKAGE_PIN AW25 IOSTANDARD LVCMOS18 } [get_ports { uart_rx_i[1] }];
+# UART0 — no second channel on VCU118 USB-UART bridge.
 # Routed to CTS/RTS pins (unused) as harmless stubs to satisfy port binding.
 # Verified: part0_pins.xml USB_UART_CTS=BB22, USB_UART_RTS=AY25
-set_property -dict { PACKAGE_PIN BB22 IOSTANDARD LVCMOS18 } [get_ports { uart_tx_o[1] }];
-set_property -dict { PACKAGE_PIN AY25 IOSTANDARD LVCMOS18 } [get_ports { uart_rx_i[1] }];
+set_property -dict { PACKAGE_PIN BB22 IOSTANDARD LVCMOS18 } [get_ports { uart_tx_o[0] }];
+set_property -dict { PACKAGE_PIN AY25 IOSTANDARD LVCMOS18 } [get_ports { uart_rx_i[0] }];
 
 # -----------------------------------------------------------------------------
 # LEDs — VCU118 has 8 user LEDs (active high, directly driven)
