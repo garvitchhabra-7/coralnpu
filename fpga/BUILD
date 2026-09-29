@@ -30,6 +30,9 @@ _VECTOR_CLOCK_FREQUENCY_MHZ = "50"
 
 _CLOCK_FREQUENCY_MHZ = _MATRIX_CLOCK_FREQUENCY_MHZ
 
+# VCU118 closes clk_main timing at ~44.7 MHz max (WNS -2.356 ns at 50 MHz).
+_VCU118_CLOCK_FREQUENCY_MHZ = "40"
+
 _ISP_CLOCK_FREQUENCY_MHZ = "10"
 
 _SPIM_CLOCK_FREQUENCY_MHZ = "100"
@@ -747,27 +750,37 @@ VCU118_COMMON_CORES = [
     "//fpga/ip/ispyocto:ispyocto_core",
 ] + DDR_VCU118_CORES
 
+# VCU118 ROM images: no SPI flash on VCU118, so the highmem ROM holds a standalone test
+# program instead of the flash bootloader. Default mem config keeps the upstream image.
+_VCU118_ROM_VMEM = {
+    "default": (":rom_test_vmem", "$(location :rom_test_vmem)"),
+    "highmem": (":rom_hello_highmem_vmem", "$(location :rom_hello_highmem_vmem)"),
+}
+
+# Generate VCU118 build targets (bitstream, synth_only, and elab_only)
 _VCU118_NAME_MAP = {
     "build_chip_vcu118_" + build_type + m["suffix"] + b["suffix"]: {
         "cores": CORALNPU_SOC_CORES_COMMON + VCU118_COMMON_CORES + [m["chisel_core"]],
-        "srcs": VCU118_COMMON_SRCS + [m["chisel_rtl"]] + ([m["rom_vmem"]] if b["is_rom"] else []),
+        "srcs": VCU118_COMMON_SRCS + [m["chisel_rtl"]] + ([_VCU118_ROM_VMEM[m["name"]][0]] if b["is_rom"] else []),
         "flags": [
-            "--ClockFrequencyMhz=" + _CLOCK_FREQUENCY_MHZ,
+            "--ClockFrequencyMhz=" + _VCU118_CLOCK_FREQUENCY_MHZ,
             "--IspClockFrequencyMhz=" + _ISP_CLOCK_FREQUENCY_MHZ,
             "--SpimClockFrequencyMhz=" + _SPIM_CLOCK_FREQUENCY_MHZ,
             "--ItcmSizeKBytes=" + m["itcm"],
             "--DtcmSizeKBytes=" + m["dtcm"],
         ] + ([
             "--EnableAutoboot=1",
-            "--MemInitFile=" + m["rom_vmem_file"],
+            "--MemInitFile=" + _VCU118_ROM_VMEM[m["name"]][1],
             "--BootAddr=268435456",
-        ] if b["is_rom"] else []) + (["--pnr=none"] if build_type == "synth_only" else []),
+        ] if b["is_rom"] else []) + (["--pnr=none"] if build_type in ("synth_only", "elab_only") else []),
+        "target": "elab" if build_type == "elab_only" else "synth",
     }
     for m in _MEM_CONFIGS
     for b in _BOOT_MODES
     for build_type in [
         "bitstream",
         "synth_only",
+        "elab_only",
     ]
 }
 
@@ -779,7 +792,6 @@ template_rule(
     },
     systems = ["com.google.coralnpu:fpga:chip_vcu118:0.1"],
     tags = ["manual"],
-    target = "synth",
 )
 
 filegroup(
@@ -962,6 +974,25 @@ coralnpu_v2_binary(
         ":spi_flash",
         ":uart",
     ],
+)
+
+# Standalone ROM-resident test for VCU118: runs straight from ROM with autoboot.
+# VCU118 has no SPI flash, so the flash bootloader (rom_test_highmem) cannot work there.
+coralnpu_v2_binary(
+    name = "rom_hello_highmem",
+    srcs = ["sw/rom_hello_test.c"],
+    crt = ":rom_boot_crt0",
+    linker_script = "sw/rom_boot/rom_highmem.ld",
+    deps = [
+        ":clk",
+        ":uart",
+    ],
+)
+
+filegroup(
+    name = "rom_hello_highmem_vmem",
+    srcs = [":rom_hello_highmem"],
+    output_group = "vmem_file",
 )
 
 genrule(
