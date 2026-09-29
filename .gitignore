@@ -34,3 +34,10 @@ dispatch.log
 temp/
 .ai-pod/
 master.xdc
+
+# Vivado run leftovers (batch/GUI launched from the repo root)
+.Xil/
+vivado*.jou
+vivado*.log
+vivado_pid*.str
+hs_err_pid*.log
