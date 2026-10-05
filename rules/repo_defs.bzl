@@ -514,6 +514,7 @@ exports_files(["diplomacy/src/diplomacy/nodes/HeterogeneousBag.scala"])
         build_file = "@coralnpu_hw//third_party/srecord:srecord.BUILD",
         patches = [
             "@coralnpu_hw//third_party/srecord:0001-Disable-docs-and-tests.patch",
+            "@coralnpu_hw//third_party/srecord:0002-Exclude-nix-store-from-runtime-deps.patch",
         ],
         patch_args = ["-p1"],
     )

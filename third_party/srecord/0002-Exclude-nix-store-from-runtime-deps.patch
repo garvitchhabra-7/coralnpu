@@ -1,0 +1,24 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Garvit Chhabra <garvit.chhabra@hotmail.com>
+Date: Thu, 4 Sep 2026 00:00:00 +0000
+Subject: [PATCH] Exclude Nix store from CMake runtime dependency resolution
+
+On Nix-managed systems, CMake's GET_RUNTIME_DEPENDENCIES finds both
+/lib64/ld-linux-x86-64.so.2 and /nix/store/.../ld-linux-x86-64.so.2,
+causing a "Multiple conflicting paths" error during install.
+
+---
+ etc/packaging.cmake | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/etc/packaging.cmake b/etc/packaging.cmake
+--- a/etc/packaging.cmake
++++ b/etc/packaging.cmake
+@@ -49,6 +49,7 @@
+   install(RUNTIME_DEPENDENCY_SET ${PROJECT_NAME}_dlls
+     PRE_EXCLUDE_REGEXES "api-ms-" "ext-ms-"
+     POST_EXCLUDE_REGEXES ".*system32/.*\\.dll"
++      "/nix/store/.*"
+     DIRECTORIES ${DLL_SEARCH_DIRS}
+     COMPONENT ${target}
+     )

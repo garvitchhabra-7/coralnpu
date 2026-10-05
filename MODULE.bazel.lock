@@ -748,7 +748,8 @@
               "strip_prefix": "srecord-1.65.0-Source",
               "build_file": "@@//third_party/srecord:srecord.BUILD",
               "patches": [
-                "@@//third_party/srecord:0001-Disable-docs-and-tests.patch"
+                "@@//third_party/srecord:0001-Disable-docs-and-tests.patch",
+                "@@//third_party/srecord:0002-Exclude-nix-store-from-runtime-deps.patch"
               ],
               "patch_args": [
                 "-p1"
