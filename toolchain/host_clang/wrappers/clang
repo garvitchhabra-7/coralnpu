@@ -1,2 +1,21 @@
 #!/bin/bash
-exec clang "$@"
+# Bazel compiles both C and C++ through this single `clang` entry point.
+#
+# Nix's clang wrapper only adds the libstdc++ include paths when invoked as
+# clang++, so when clang comes from Nix, read those paths from the wrapper's
+# nix-support directory instead of hardcoding store hashes.
+#
+# Inside the FHS dev shell (flake.nix), libraries from Nix packages live under
+# /usr; Nix's clang does not search there by default, so add it last.
+cc_real="$(readlink -f "$(command -v clang)")"
+cxxflags_file="$(dirname "$cc_real")/../nix-support/libcxx-cxxflags"
+
+flags=()
+if [[ -r "$cxxflags_file" ]]; then
+  read -r -a flags < "$cxxflags_file"
+fi
+if [[ "$(readlink -f /usr/include/stdio.h 2>/dev/null)" == /nix/store/* ]]; then
+  flags+=(-idirafter /usr/include -L/usr/lib -Wl,-rpath,/usr/lib -Qunused-arguments)
+fi
+
+exec clang "${flags[@]}" "$@"

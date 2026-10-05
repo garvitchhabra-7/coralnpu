@@ -1,2 +1,9 @@
 #!/bin/bash
-exec clang++ "$@"
+# Inside the FHS dev shell (flake.nix), libraries from Nix packages live under
+# /usr; Nix's clang does not search there by default, so add it last.
+flags=()
+if [[ "$(readlink -f /usr/include/stdio.h 2>/dev/null)" == /nix/store/* ]]; then
+  flags+=(-idirafter /usr/include -L/usr/lib -Wl,-rpath,/usr/lib -Qunused-arguments)
+fi
+
+exec clang++ "${flags[@]}" "$@"
