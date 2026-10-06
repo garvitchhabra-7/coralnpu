@@ -197,6 +197,20 @@ module coralnpu_soc #(
 
   localparam logic [31:0] CsrBaseAddr = (ItcmSizeKBytes == 8 && DtcmSizeKBytes == 32) ? 32'h00030000 : 32'h00200000;
 
+  // Must be declared before gen_autoboot uses it: a forward reference from
+  // inside a generate block makes Vivado create an undriven implicit net
+  // (gen_autoboot.rst_main_nqq), leaving autoboot without a reset.
+  logic rst_main_nq, rst_main_nqq;
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      rst_main_nq  <= 1'b0;
+      rst_main_nqq <= 1'b0;
+    end else begin
+      rst_main_nq  <= 1'b1;
+      rst_main_nqq <= rst_main_nq;
+    end
+  end
+
   if (EnableAutoboot) begin : gen_autoboot
     autoboot #(
         .CsrBaseAddr(CsrBaseAddr)
@@ -497,17 +511,6 @@ module coralnpu_soc #(
       .disable_isp_i(1'b0),
       .scanmode_i   (1'b0)
   );
-
-  logic rst_main_nq, rst_main_nqq;
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) begin
-      rst_main_nq  <= 1'b0;
-      rst_main_nqq <= 1'b0;
-    end else begin
-      rst_main_nq  <= 1'b1;
-      rst_main_nqq <= rst_main_nq;
-    end
-  end
 
   logic rst_isp_nq, rst_isp_nqq;
   always_ff @(posedge clk_isp_i or negedge rst_ni) begin
