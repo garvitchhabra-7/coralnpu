@@ -1,14 +1,76 @@
 # VCU118 Port — Progress Log
 
-## Status: NEW BITSTREAM BUILT (2026-09-25 20:12), not yet programmed. Next: board bring-up session.
+## Status (2026-10-07): bring-up done through DDR. ROM boot, UART and DDR4 all work on the board.
 
-All fixes are in, the rebuild passed, and the result is archived. The board still holds the **old**
-bitstream (reset bug). Nothing more can happen on hardware until someone is physically at the board —
-see [Next Board Session](#next-board-session--checklist).
+| Plan task | Status | Bitstream |
+|---|---|---|
+| 7.1 Program + LEDs | DONE | `fpga/bitstreams/vcu118_highmem_2026-09-25/` (ITCM boot) |
+| 7.2 UART | DONE, see `vcu118_task7_2_uart.md` | `fpga/bitstreams/vcu118_highmem_rom_2026-10-05/` (ROM boot) |
+| 7.3 SPI program loading | SKIPPED, no FTDI MPSSE adapter | none |
+| 7.4 DDR4 test | **DONE, `DDR PASS` on the board** | `fpga/bitstreams/vcu118_highmem_rom_2026-10-06_201108/` |
+| 7.5 RISC-V JTAG debug | open, needs an adapter on PMOD0 | none |
 
-Last updated: 2026-09-29
+Timing is still not met. It is documented in `vcu118_timing_fixes.md` and deliberately left as is
+for now, to move on to image tests.
+
+**Next: image tests (Phase 8).** See `vcu118_image_test_plan.md`. It is blocked on choosing a way
+to load the model and images onto the board.
+
+Last updated: 2026-10-07
 
 ---
+
+## 2026-10-06 build: 35 MHz, DDR side on 100 MHz, DDR test in ROM
+
+`bazelisk run //fpga:archive_chip_vcu118_bitstream_highmem_rom`, built 2026-10-06 20:11 and archived
+automatically (the new target copies the bitstream and reports with a timestamp, see
+`fpga/archive_vcu118_bitstream.sh`). Bitstream md5 `1fd72c7e…`. Built from commit `95dc65e8` plus
+the uncommitted changes listed in that folder's `BUILD_INFO.txt`.
+
+**Changes in this build:**
+- **`clk_main` 40 → 35 MHz** (`fpga/BUILD`, `_VCU118_CLOCK_FREQUENCY_MHZ`). The real frequency is
+  35.036 MHz.
+- **SoC DDR side moved from the 300 MHz MIG UI clock to the MIG's 100 MHz `addn_ui_clkout1`:**
+  - the SmartConnect in `ddr_system_bd` now has two clocks (S00 on `aclk1` at 100 MHz, M00 on
+    `aclk` at 300 MHz);
+  - `chip_vcu118.sv` has a reset synchroniser (`ddr_axi_rst`) for the new clock.
+- **SmartConnect address segment widened from 512 MB to 2 GB at `0x80000000`.** It now matches the
+  SoC's `ddr_mem` window and the 2 GB MIG. Before this, accesses above `0x9FFFFFFF` got a decode
+  error.
+- **DDR calibration status on `gpio_i[0]`** (2-flop synchroniser in `chip_vcu118.sv`), so software
+  can poll it before touching DDR.
+- **ROM image is now `rom_ddr_test_highmem`** (`fpga/sw/rom_ddr_test.c`) instead of
+  `rom_hello_highmem`. It prints the same banner and heartbeat.
+- **DDR checkpoints:** regenerated in `~/workspace/test_project`. The old ones are backed up in
+  `fpga/bitstreams/vcu118_highmem_rom_2026-10-05/ddr4_dcp_backup_2026-09-22/`. The steps are in
+  `fpga/ip/ddr4_vcu118/GENERATING_DDR4_IP.md`.
+
+**Board result:** the DDR test passed. Its tests:
+- calibration wait;
+- single word at `0x80000000`;
+- byte/halfword strobes;
+- walking 1s/0s;
+- 1 MB address pattern;
+- address lines below and above 512 MB, up to the top word of the 2 GB window.
+
+**Timing** (details and fixes in `vcu118_timing_fixes.md`, section "Results of the 2026-10-06
+build"):
+- WNS −2.351 ns, 1538 failing endpoints.
+- `clk_main` itself is now clean (+2.200 ns), and so is the DDR-side bus logic on 100 MHz
+  (+3.847 ns).
+- Remaining:
+  - false-looking CDC failures caused by the 35 MHz ratio (791 endpoints);
+  - the 300 MHz SmartConnect/MIG domain (708 endpoints, −1.715 ns);
+  - the MIG reset synchroniser (3 endpoints).
+
+**Known risk while timing is open:** the 300 MHz violation sits on the DDR data path. The DDR test
+passed, but a negative-slack path can fail intermittently (temperature, data patterns). If image
+data read from DDR ever looks corrupted, suspect this first and rerun the ROM DDR test.
+
+---
+
+> The checklist below dates from 2026-09-25 and is kept for history. The ROM-boot route replaced
+> its "SPI is the only load path" plan for 7.2 and 7.4.
 
 ## NEXT BOARD SESSION — CHECKLIST
 

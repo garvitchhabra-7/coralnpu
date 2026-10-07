@@ -1,8 +1,15 @@
 # VCU118 — Remote DDR4 Calibration Check over JTAG
 
-Script: `fpga/check_ddr_vcu118.tcl` (written 2026-09-29, **not yet run**).
+Script: `fpga/check_ddr_vcu118.tcl` (written 2026-09-29).
 Purpose: confirm the reset-polarity fix and DDR4 calibration **without anyone at the board** — no
 LEDs, no UART, no extra cable. Uses only the on-board Digilent JTAG already attached to the host.
+
+> **Status 2026-10-07:** DDR4 is verified end to end from the core. The ROM DDR test
+> (`fpga/sw/rom_ddr_test.c`, porting plan task 7.4) printed `DDR PASS` on the board with bitstream
+> `fpga/bitstreams/vcu118_highmem_rom_2026-10-06_201108/`. That covers calibration and the SoC →
+> SmartConnect → MIG data path. This script is still useful as a no-UART check of the MIG, e.g. after
+> regenerating the DDR IP. There are now three ways to check DDR; see
+> [Ways to check DDR](#ways-to-check-ddr-2026-10-07).
 
 ---
 
@@ -51,7 +58,8 @@ This is how the reset bug was found on 2026-09-25: every register read back 0, w
 **Read-only: it never programs the device or writes any register.**
 
 Defaults: `.ltx` = `fpga/bitstreams/vcu118_highmem_2026-09-25/chip_vcu118.ltx`, serial =
-`210308B76D4D`. The `.ltx` must match the bitstream currently on the board.
+`210308B76D4D`. The `.ltx` must match the bitstream currently on the board. **The default is out of
+date:** the board now holds the 2026-10-06 build, so pass its `.ltx` explicitly (see Usage).
 
 ---
 
@@ -71,8 +79,15 @@ vivado -mode batch -source fpga/check_ddr_vcu118.tcl
 vivado -mode batch -source fpga/check_ddr_vcu118.tcl -tclargs <path/to/chip_vcu118.ltx> <serial>
 ```
 
-For the ROM-boot bitstream, pass its `.ltx` from
-`bazel-bin/fpga/build.build_chip_vcu118_bitstream_highmem_rom/.../impl_1/chip_vcu118.ltx`.
+For the current bitstream (2026-10-06):
+
+```bash
+vivado -mode batch -source fpga/check_ddr_vcu118.tcl \
+  -tclargs fpga/bitstreams/vcu118_highmem_rom_2026-10-06_201108/chip_vcu118.ltx
+```
+
+Builds made with `bazelisk run //fpga:archive_chip_vcu118_bitstream_highmem_rom` put the `.ltx` in
+`fpga/bitstreams/vcu118_highmem_rom_<build time>/`.
 
 ---
 
@@ -92,14 +107,34 @@ For the ROM-boot bitstream, pass its `.ltx` from
 
 - **CoralNPU execution.** It shows the reset path and DDR are alive, not that the core runs code.
   That is proven by the ROM-boot bitstream's UART heartbeat (`fpga/sw/rom_hello_test.c`).
-- **DDR data integrity from the core's side.** Calibration passing ≠ the SoC's TL-UL → AXI → MIG path
-  works. Needs a DDR read/write test program (not written yet).
+- **DDR data integrity from the core's side.** Calibration passing does not prove that the SoC's
+  TL-UL → AXI → SmartConnect → MIG path works. That is now covered by the ROM DDR test (below).
 
 ---
+
+## Ways to check DDR (2026-10-07)
+
+| Check | How | What it proves | Needs |
+|---|---|---|---|
+| LED2 (`ddr_cal_complete_o`, AY30) | look at the board | calibration finished | someone at the board |
+| This script | `check_ddr_vcu118.tcl` + matching `.ltx` | calibration status, stage and pass/fail from the MIG debug core | JTAG cable only |
+| ROM DDR test | program a `_rom` bitstream built with `rom_ddr_test_highmem`, watch `ttyUSB4` | calibration (polled on `gpio_i[0]`) and core-side read/write: single word, byte strobes, walking bits, 1 MB pattern, address lines up to the top of the 2 GB window | UART cable |
+
+**The ROM DDR test in more detail:**
+- Calibration status reaches software through `gpio_i[0]`: `c0_init_calib_complete`, synchronised to
+  `clk_main` in `chip_vcu118.sv`. Any program can poll `GPIO_DATA_IN` (`0x40030000`) bit 0 before
+  touching `0x80000000`.
+- The DDR window is `0x80000000`–`0xFFFFFFFF` (2 GB). Before 2026-10-06, `ddr_system_bd`'s
+  SmartConnect decoded only 512 MB of it.
+- The test's output ends with `DDR PASS` or `DDR FAIL`, and every heartbeat line repeats it. A bus
+  error prints `*** TRAP ***` with `mcause`/`mepc`/`mtval`.
+- Timing on the 300 MHz MIG side is still not met (`vcu118_timing_fixes.md`, group B). If DDR data
+  ever looks wrong, rerun this test first.
 
 ## Results log
 
 | Date | Bitstream | Result |
 |---|---|---|
 | 2026-09-25 | 2026-09-24 (reset bug) | all registers 0, `[Xicom 50-46]` — MIG in reset (manual Hardware Manager read, before this script existed) |
-| | 2026-09-25 (reset fix) | *pending* |
+| | 2026-09-25 (reset fix) | **not recorded.** Calibration was later seen working (LED2, and the timing note mentions a `CAL PASS` script run on the 2026-09-29 build, but that output file `ddr_check_2026-10-05.txt` and the 2026-09-29 folder are no longer in `fpga/bitstreams/`) |
+| 2026-10-06 | 2026-10-06_201108 (35 MHz, DDR side on 100 MHz, 2 GB segment) | ROM DDR test: **`DDR PASS`** on `ttyUSB4`. Script not run on this build |

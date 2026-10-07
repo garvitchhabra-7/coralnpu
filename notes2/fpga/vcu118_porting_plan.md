@@ -308,23 +308,31 @@ Output: `chip_vcu118.bin` or `chip_vcu118.bit` for FPGA programming.
 
 ### Phase 7: Board Bring-Up
 
-**Task 7.1: Program FPGA**
+**Task 7.1: Program FPGA** — DONE (bitstream `fpga/bitstreams/vcu118_highmem_2026-09-25/`)
 
 Program VCU118 via Vivado Hardware Manager + JTAG cable. Verify:
 - LEDs respond (halted/fault/DDR cal)
 - DDR4 calibration completes (LED goes high, ~1 second)
 
-**Task 7.2: UART verification**
+**Task 7.2: UART verification** — DONE (ROM boot, `fpga/bitstreams/vcu118_highmem_rom_2026-10-05/`; see `vcu118_task7_2_uart.md`)
 
 Connect USB cable to VCU118 USB-UART port. Open serial terminal (115200 baud). No output expected yet — just verify the port enumerates.
 
-**Task 7.3: SPI program loading**
+**Task 7.3: SPI program loading** — SKIPPED (no FTDI MPSSE adapter)
 
 Connect FTDI adapter to PMOD J52 SPI pins. Use `nexus_loader` (or adapt it) to:
 1. Write a word to ITCM via SPI → read it back → verify
 2. Load `trivial_pass_test` binary → verify UART output "PASS"
 
-**Task 7.4: DDR4 verification**
+**Task 7.4: DDR4 verification** — DONE 2026-10-06, `DDR PASS` on the board (`fpga/bitstreams/vcu118_highmem_rom_2026-10-06_201108/`)
+
+Done as a ROM program (no load path without 7.3): `fpga/sw/rom_ddr_test.c`, target
+`//fpga:rom_ddr_test_highmem`, now the VCU118 highmem ROM image. It waits for calibration on
+`gpio_i[0]` (new in `chip_vcu118.sv`), then runs single-word, byte-strobe, walking-bit,
+1 MB address-pattern and address-line tests, prints `DDR PASS`/`DDR FAIL`, and repeats the result in
+the heartbeat. A trap handler prints `mcause`/`mepc`/`mtval` on a bus error.
+
+Original plan:
 
 Write a simple test program that:
 1. Waits for DDR calibration (poll status or just wait 2 seconds)
