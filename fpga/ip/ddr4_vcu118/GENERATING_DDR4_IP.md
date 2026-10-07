@@ -44,26 +44,37 @@ apply_board_connection -board_interface "ddr4_sdram_c1" -ip_intf "ddr4_0/C0_DDR4
 apply_board_connection -board_interface "default_250mhz_clk1" -ip_intf "ddr4_0/C0_SYS_CLK" -diagram "ddr_system_bd"
 ```
 
-### Step 3: Add SmartConnect for AXI width conversion
+### Step 3: Add SmartConnect for width and clock conversion
 
-The MIG produces a 512-bit AXI master. CoralNPU needs 256-bit. Add a
-SmartConnect to convert:
+The MIG's AXI slave is 512 bits wide on the 300 MHz UI clock. CoralNPU drives a
+256-bit AXI master, and its DDR-side logic does not close timing at 300 MHz, so
+it runs on the MIG's additional 100 MHz output (`addn_ui_clkout1`). The
+SmartConnect converts both width and clock: S00 (CoralNPU side) on `aclk1` =
+100 MHz, M00 (MIG side) on `aclk` = UI clock.
 
 ```tcl
+# The board preset already sets ADDN_UI_CLKOUT1 to 100 MHz; set it explicitly
+# so a different preset cannot change it.
+set_property CONFIG.ADDN_UI_CLKOUT1_FREQ_HZ 100 [get_bd_cells ddr4_0]
+
 create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect smartconnect_0
-set_property CONFIG.NUM_SI 1 [get_bd_cells smartconnect_0]
-set_property CONFIG.NUM_MI 1 [get_bd_cells smartconnect_0]
+set_property -dict [list CONFIG.NUM_SI 1 CONFIG.NUM_MI 1 CONFIG.NUM_CLKS 2] \
+    [get_bd_cells smartconnect_0]
 
 # Connect SmartConnect master → MIG slave
 connect_bd_intf_net [get_bd_intf_pins smartconnect_0/M00_AXI] \
                     [get_bd_intf_pins ddr4_0/C0_DDR4_S_AXI]
 
-# Clock and reset
+# Clocks: aclk (M00) = UI clock, aclk1 (S00) = 100 MHz
 connect_bd_net [get_bd_pins ddr4_0/c0_ddr4_ui_clk] \
                [get_bd_pins smartconnect_0/aclk]
-connect_bd_net [get_bd_pins ddr4_0/c0_ddr4_ui_clk_sync_rst] \
-               [get_bd_pins smartconnect_0/aresetn]
+connect_bd_net [get_bd_pins ddr4_0/addn_ui_clkout1] \
+               [get_bd_pins smartconnect_0/aclk1]
 ```
+
+The SmartConnect's single active-low `aresetn` is driven from outside the
+block design (Step 4), and the SmartConnect synchronises it into both clock
+domains internally. `chip_vcu118.sv` drives it with `~c0_ddr4_ui_clk_sync_rst`.
 
 ### Step 4: Make ports external
 
@@ -79,6 +90,12 @@ make_bd_intf_pins_external [get_bd_intf_pins smartconnect_0/S00_AXI]
 make_bd_pins_external [get_bd_pins ddr4_0/c0_ddr4_ui_clk]
 make_bd_pins_external [get_bd_pins ddr4_0/c0_ddr4_ui_clk_sync_rst]
 make_bd_pins_external [get_bd_pins ddr4_0/c0_ddr4_aresetn]
+make_bd_pins_external [get_bd_pins ddr4_0/addn_ui_clkout1]
+connect_bd_net [get_bd_ports c0_ddr4_aresetn_0] [get_bd_pins smartconnect_0/aresetn]
+
+# The external S00 port belongs to the 100 MHz clock, not the UI clock
+set_property CONFIG.ASSOCIATED_BUSIF {} [get_bd_ports c0_ddr4_ui_clk_0]
+set_property CONFIG.ASSOCIATED_BUSIF S00_AXI_0 [get_bd_ports addn_ui_clkout1_0]
 
 # Debug (optional, left unconnected)
 make_bd_pins_external [get_bd_pins ddr4_0/dbg_bus]
@@ -88,11 +105,25 @@ make_bd_pins_external [get_bd_pins ddr4_0/dbg_clk]
 make_bd_pins_external [get_bd_pins ddr4_0/c0_init_calib_complete]
 ```
 
-### Step 5: Validate and generate
+### Step 5: Assign the address map, validate and generate
+
+The SoC sends the full address (`0x80000000` + offset) and maps 2 GB of DDR
+there (`ddr_mem` in `hdl/chisel/src/soc/CrossbarConfig.scala`). The MIG on
+VCU118 C1 is 2 GB (`C0.DDR4_AxiAddressWidth` 31). The SmartConnect segment
+must cover all of it, or accesses above the segment get a decode error.
+The block design behind the 2026-09-22 and 2026-10-06 checkpoints had only a
+512 MB segment, so set the range explicitly:
 
 ```tcl
+assign_bd_address
+set_property offset 0x80000000 [get_bd_addr_segs {S00_AXI_0/SEG_ddr4_0_C0_DDR4_ADDRESS_BLOCK}]
+set_property range 2G          [get_bd_addr_segs {S00_AXI_0/SEG_ddr4_0_C0_DDR4_ADDRESS_BLOCK}]
+
 validate_bd_design
 save_bd_design
+
+# Check: S00_AXI_0 must report FREQ_HZ 100000000 and the addn_ui_clkout1 clock domain
+report_property [get_bd_intf_ports S00_AXI_0] -regexp {CONFIG\.(FREQ_HZ|CLK_DOMAIN)}
 
 # Generate HDL wrapper
 make_wrapper -files [get_files ddr_system_bd.bd] -top

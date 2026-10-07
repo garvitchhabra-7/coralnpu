@@ -91,6 +91,23 @@ module chip_vcu118 #(
   assign ddr_ui_clk = c0_ddr4_ui_clk;
   assign ddr_ui_clk_sync_rst = c0_ddr4_ui_clk_sync_rst;
 
+  // The SoC's DDR-side logic runs on the MIG's 100 MHz addn_ui_clkout1, not on
+  // the 300 MHz UI clock. The SmartConnect in ddr_system_bd converts to the UI
+  // clock (S00 on aclk1, M00 on aclk). ddr_axi_rst is the UI-clock reset,
+  // asserted asynchronously and released synchronously to ddr_axi_clk.
+  logic ddr_axi_clk;
+  logic ddr_axi_rst;
+  (* ASYNC_REG = "TRUE" *) logic [2:0] ddr_axi_rst_q;
+
+  always_ff @(posedge ddr_axi_clk or posedge c0_ddr4_ui_clk_sync_rst) begin
+    if (c0_ddr4_ui_clk_sync_rst) begin
+      ddr_axi_rst_q <= '1;
+    end else begin
+      ddr_axi_rst_q <= {ddr_axi_rst_q[1:0], 1'b0};
+    end
+  end
+  assign ddr_axi_rst = ddr_axi_rst_q[2];
+
   // MIG wrapper exposes bg[1:0] but only bg[0] is connected (single bank group memory).
   wire [1:0] c0_ddr4_bg_internal;
   assign c0_ddr4_bg = c0_ddr4_bg_internal[0];
@@ -236,7 +253,7 @@ module chip_vcu118 #(
       .c0_ddr4_ui_clk_0(c0_ddr4_ui_clk),
       .c0_ddr4_ui_clk_sync_rst_0(c0_ddr4_ui_clk_sync_rst),
       .c0_ddr4_aresetn_0(c0_ddr4_aresetn),
-      .addn_ui_clkout1_0(),
+      .addn_ui_clkout1_0(ddr_axi_clk),
       .dbg_clk_0(),
       .dbg_bus_0(),
       .S00_AXI_0_awid(c0_ddr4_s_axi_awid),
@@ -377,8 +394,8 @@ module chip_vcu118 #(
       .sda_en_o(sda_en),
       .io_halted(io_halted),
       .io_fault(io_fault),
-      .ddr_clk_i(c0_ddr4_ui_clk),
-      .ddr_rst(c0_ddr4_ui_clk_sync_rst),
+      .ddr_clk_i(ddr_axi_clk),
+      .ddr_rst(ddr_axi_rst),
       .io_ddr_ctrl_axi_aw_valid(c0_ddr4_s_axi_ctrl_awvalid),
       .io_ddr_ctrl_axi_aw_ready(c0_ddr4_s_axi_ctrl_awready),
       .io_ddr_ctrl_axi_aw_bits_addr(c0_ddr4_s_axi_ctrl_awaddr),

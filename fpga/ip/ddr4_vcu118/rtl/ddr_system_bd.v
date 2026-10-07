@@ -2,7 +2,7 @@
 //Copyright 2022-2025 Advanced Micro Devices, Inc. All Rights Reserved.
 //--------------------------------------------------------------------------------
 //Tool Version: Vivado v.2025.2 (lin64) Build 6299465 Fri Nov 14 12:34:56 MST 2025
-//Date        : Tue Sep 22 13:46:01 2026
+//Date        : Tue Oct  6 11:25:36 2026
 //Host        : synthesia running 64-bit Rocky Linux release 8.10 (Green Obsidian)
 //Command     : generate_target ddr_system_bd.bd
 //Design      : ddr_system_bd
@@ -89,7 +89,7 @@ module ddr_system_bd
   (* X_INTERFACE_INFO = "xilinx.com:interface:ddr4:1.0 C0_DDR4_0 RESET_N" *) output C0_DDR4_0_reset_n;
   (* X_INTERFACE_INFO = "xilinx.com:interface:diff_clock:1.0 C0_SYS_CLK_0 CLK_N" *) (* X_INTERFACE_MODE = "Slave" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME C0_SYS_CLK_0, CAN_DEBUG false, FREQ_HZ 250000000" *) input C0_SYS_CLK_0_clk_n;
   (* X_INTERFACE_INFO = "xilinx.com:interface:diff_clock:1.0 C0_SYS_CLK_0 CLK_P" *) input C0_SYS_CLK_0_clk_p;
-  (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 S00_AXI_0 ARADDR" *) (* X_INTERFACE_MODE = "Slave" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME S00_AXI_0, ADDR_WIDTH 34, ARUSER_WIDTH 0, AWUSER_WIDTH 0, BUSER_WIDTH 0, DATA_WIDTH 256, FREQ_HZ 300000000, HAS_BRESP 1, HAS_BURST 1, HAS_CACHE 1, HAS_LOCK 1, HAS_PROT 1, HAS_QOS 1, HAS_REGION 1, HAS_RRESP 1, HAS_WSTRB 1, ID_WIDTH 1, INSERT_VIP 0, MAX_BURST_LENGTH 256, NUM_READ_OUTSTANDING 1, NUM_READ_THREADS 1, NUM_WRITE_OUTSTANDING 1, NUM_WRITE_THREADS 1, PHASE 0.0, PROTOCOL AXI4, READ_WRITE_MODE READ_WRITE, RUSER_BITS_PER_BYTE 0, RUSER_WIDTH 0, SUPPORTS_NARROW_BURST 1, WUSER_BITS_PER_BYTE 0, WUSER_WIDTH 0" *) input [33:0]S00_AXI_0_araddr;
+  (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 S00_AXI_0 ARADDR" *) (* X_INTERFACE_MODE = "Slave" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME S00_AXI_0, ADDR_WIDTH 34, ARUSER_WIDTH 0, AWUSER_WIDTH 0, BUSER_WIDTH 0, CLK_DOMAIN ddr_system_bd_ddr4_0_0_c0_ddr4_ui_clk, DATA_WIDTH 256, FREQ_HZ 100000000, HAS_BRESP 1, HAS_BURST 1, HAS_CACHE 1, HAS_LOCK 1, HAS_PROT 1, HAS_QOS 1, HAS_REGION 1, HAS_RRESP 1, HAS_WSTRB 1, ID_WIDTH 1, INSERT_VIP 0, MAX_BURST_LENGTH 256, NUM_READ_OUTSTANDING 1, NUM_READ_THREADS 1, NUM_WRITE_OUTSTANDING 1, NUM_WRITE_THREADS 1, PHASE 0, PROTOCOL AXI4, READ_WRITE_MODE READ_WRITE, RUSER_BITS_PER_BYTE 0, RUSER_WIDTH 0, SUPPORTS_NARROW_BURST 1, WUSER_BITS_PER_BYTE 0, WUSER_WIDTH 0" *) input [33:0]S00_AXI_0_araddr;
   (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 S00_AXI_0 ARBURST" *) input [1:0]S00_AXI_0_arburst;
   (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 S00_AXI_0 ARCACHE" *) input [3:0]S00_AXI_0_arcache;
   (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 S00_AXI_0 ARID" *) input [0:0]S00_AXI_0_arid;
@@ -126,7 +126,7 @@ module ddr_system_bd
   (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 S00_AXI_0 WREADY" *) output S00_AXI_0_wready;
   (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 S00_AXI_0 WSTRB" *) input [31:0]S00_AXI_0_wstrb;
   (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 S00_AXI_0 WVALID" *) input S00_AXI_0_wvalid;
-  (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 CLK.ADDN_UI_CLKOUT1_0 CLK" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME CLK.ADDN_UI_CLKOUT1_0, CLK_DOMAIN ddr_system_bd_ddr4_0_0_c0_ddr4_ui_clk, FREQ_HZ 100000000, FREQ_TOLERANCE_HZ 0, INSERT_VIP 0, PHASE 0" *) output addn_ui_clkout1_0;
+  (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 CLK.ADDN_UI_CLKOUT1_0 CLK" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME CLK.ADDN_UI_CLKOUT1_0, ASSOCIATED_BUSIF S00_AXI_0, CLK_DOMAIN ddr_system_bd_ddr4_0_0_c0_ddr4_ui_clk, FREQ_HZ 100000000, FREQ_TOLERANCE_HZ 0, INSERT_VIP 0, PHASE 0" *) output addn_ui_clkout1_0;
   (* X_INTERFACE_INFO = "xilinx.com:signal:reset:1.0 RST.C0_DDR4_ARESETN_0 RST" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME RST.C0_DDR4_ARESETN_0, INSERT_VIP 0, POLARITY ACTIVE_LOW" *) input c0_ddr4_aresetn_0;
   (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 CLK.C0_DDR4_UI_CLK_0 CLK" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME CLK.C0_DDR4_UI_CLK_0, CLK_DOMAIN ddr_system_bd_ddr4_0_0_c0_ddr4_ui_clk, FREQ_HZ 300000000, FREQ_TOLERANCE_HZ 0, INSERT_VIP 0, PHASE 0.00" *) output c0_ddr4_ui_clk_0;
   (* X_INTERFACE_INFO = "xilinx.com:signal:reset:1.0 RST.C0_DDR4_UI_CLK_SYNC_RST_0 RST" *) (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME RST.C0_DDR4_UI_CLK_SYNC_RST_0, INSERT_VIP 0, POLARITY ACTIVE_HIGH" *) output c0_ddr4_ui_clk_sync_rst_0;
@@ -362,5 +362,6 @@ module ddr_system_bd
         .S00_AXI_wstrb(S00_AXI_0_wstrb),
         .S00_AXI_wvalid(S00_AXI_0_wvalid),
         .aclk(c0_ddr4_ui_clk_0),
+        .aclk1(addn_ui_clkout1_0),
         .aresetn(c0_ddr4_aresetn_0));
 endmodule
