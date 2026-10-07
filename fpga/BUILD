@@ -796,6 +796,26 @@ template_rule(
     tags = ["manual"],
 )
 
+# Builds a VCU118 bitstream (if needed) and copies it, with its reports, into
+# fpga/bitstreams/vcu118<mem><boot>_<build timestamp>/, e.g.
+#   bazelisk run //fpga:archive_chip_vcu118_bitstream_highmem_rom
+[
+    sh_binary(
+        name = "archive_chip_vcu118_bitstream" + m["suffix"] + b["suffix"],
+        srcs = ["archive_vcu118_bitstream.sh"],
+        args = [
+            "vcu118" + m["suffix"] + b["suffix"],
+            "$(rootpath :build_chip_vcu118_bitstream{}{})".format(m["suffix"], b["suffix"]),
+        ] + (["$(rootpath {})".format(_VCU118_ROM_VMEM[m["name"]][0])] if b["is_rom"] else []),
+        data = [
+            ":build_chip_vcu118_bitstream" + m["suffix"] + b["suffix"],
+        ] + ([_VCU118_ROM_VMEM[m["name"]][0]] if b["is_rom"] else []),
+        tags = ["manual"],
+    )
+    for m in _MEM_CONFIGS
+    for b in _BOOT_MODES
+]
+
 filegroup(
     name = "chip_verilator_binary",
     srcs = [":build_chip_verilator_vector_normal"],
