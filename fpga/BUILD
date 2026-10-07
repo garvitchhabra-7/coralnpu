@@ -756,7 +756,7 @@ VCU118_COMMON_CORES = [
 # program instead of the flash bootloader. Default mem config keeps the upstream image.
 _VCU118_ROM_VMEM = {
     "default": (":rom_test_vmem", "$(location :rom_test_vmem)"),
-    "highmem": (":rom_hello_highmem_vmem", "$(location :rom_hello_highmem_vmem)"),
+    "highmem": (":rom_ddr_test_highmem_vmem", "$(location :rom_ddr_test_highmem_vmem)"),
 }
 
 # Generate VCU118 build targets (bitstream, synth_only, and elab_only)
@@ -1014,6 +1014,26 @@ coralnpu_v2_binary(
 filegroup(
     name = "rom_hello_highmem_vmem",
     srcs = [":rom_hello_highmem"],
+    output_group = "vmem_file",
+)
+
+# ROM-resident DDR4 test for VCU118 (porting plan task 7.4). Same banner and
+# heartbeat as rom_hello_highmem, plus DDR write/read-back tests.
+coralnpu_v2_binary(
+    name = "rom_ddr_test_highmem",
+    srcs = ["sw/rom_ddr_test.c"],
+    crt = ":rom_boot_crt0",
+    linker_script = "sw/rom_boot/rom_highmem.ld",
+    deps = [
+        ":clk",
+        ":gpio",
+        ":uart",
+    ],
+)
+
+filegroup(
+    name = "rom_ddr_test_highmem_vmem",
+    srcs = [":rom_ddr_test_highmem"],
     output_group = "vmem_file",
 )
 

@@ -149,7 +149,19 @@ module chip_vcu118 #(
   wire [7:0] gpio_en;
   wire [7:0] gpio_in;
 
-  assign gpio_in = 8'b0;
+  // gpio_in[0] = DDR calibration done, so software can wait for it before
+  // touching 0x80000000 (an access before calibration hangs the crossbar).
+  // c0_init_calib_complete is in the MIG UI clock domain; the GPIO block
+  // samples gpio_i directly, so synchronise it to clk here.
+  (* ASYNC_REG = "TRUE" *) logic [1:0] ddr_cal_sync_q;
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      ddr_cal_sync_q <= '0;
+    end else begin
+      ddr_cal_sync_q <= {ddr_cal_sync_q[0], c0_init_calib_complete};
+    end
+  end
+  assign gpio_in = {7'b0, ddr_cal_sync_q[1]};
 
   logic scl_in, scl_out, scl_en;
   logic sda_in, sda_out, sda_en;
