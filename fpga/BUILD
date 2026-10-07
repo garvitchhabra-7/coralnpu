@@ -31,7 +31,9 @@ _VECTOR_CLOCK_FREQUENCY_MHZ = "50"
 _CLOCK_FREQUENCY_MHZ = _MATRIX_CLOCK_FREQUENCY_MHZ
 
 # VCU118 closes clk_main timing at ~44.7 MHz max (WNS -2.356 ns at 50 MHz).
-_VCU118_CLOCK_FREQUENCY_MHZ = "40"
+# 40 MHz failed by -0.347 ns on 2026-10-05 (host bridge -> 4 MB SRAM path), so
+# use 35 MHz (MMCM gives 1200/34.25 = 35.04 MHz) until the SRAM path is fixed.
+_VCU118_CLOCK_FREQUENCY_MHZ = "35"
 
 _ISP_CLOCK_FREQUENCY_MHZ = "10"
 
