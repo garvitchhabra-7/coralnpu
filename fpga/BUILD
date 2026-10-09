@@ -752,11 +752,12 @@ VCU118_COMMON_CORES = [
     "//fpga/ip/ispyocto:ispyocto_core",
 ] + DDR_VCU118_CORES
 
-# VCU118 ROM images: no SPI flash on VCU118, so the highmem ROM holds a standalone test
-# program instead of the flash bootloader. Default mem config keeps the upstream image.
+# VCU118 ROM images: no SPI flash on VCU118, so the highmem ROM holds the UART loader
+# (sw/rom_uart_loader.c) instead of the flash bootloader. Default mem config keeps the
+# upstream image.
 _VCU118_ROM_VMEM = {
     "default": (":rom_test_vmem", "$(location :rom_test_vmem)"),
-    "highmem": (":rom_ddr_test_highmem_vmem", "$(location :rom_ddr_test_highmem_vmem)"),
+    "highmem": (":rom_uart_loader_highmem_vmem", "$(location :rom_uart_loader_highmem_vmem)"),
 }
 
 # Generate VCU118 build targets (bitstream, synth_only, and elab_only)
@@ -1035,6 +1036,40 @@ filegroup(
     name = "rom_ddr_test_highmem_vmem",
     srcs = [":rom_ddr_test_highmem"],
     output_group = "vmem_file",
+)
+
+# ROM UART loader for VCU118: the host (uart_loader.py) writes programs and
+# data into ITCM/DTCM/SRAM/DDR over UART1 and starts them. Keeps its RAM in the
+# top 64 KB of DTCM (rom_loader_highmem.ld).
+coralnpu_v2_binary(
+    name = "rom_uart_loader_highmem",
+    srcs = ["sw/rom_uart_loader.c"],
+    crt = ":rom_boot_crt0",
+    linker_script = "sw/rom_boot/rom_loader_highmem.ld",
+    deps = [
+        ":clk",
+        ":dma",
+        ":gpio",
+        ":uart",
+    ],
+)
+
+filegroup(
+    name = "rom_uart_loader_highmem_vmem",
+    srcs = [":rom_uart_loader_highmem"],
+    output_group = "vmem_file",
+)
+
+# First program to load with uart_loader.py.
+coralnpu_v2_binary(
+    name = "uart_loader_hello",
+    srcs = ["sw/uart_loader_hello.c"],
+    dtcm_size_kbytes = 1024,
+    itcm_size_kbytes = 1024,
+    deps = [
+        ":clk",
+        ":uart",
+    ],
 )
 
 genrule(
