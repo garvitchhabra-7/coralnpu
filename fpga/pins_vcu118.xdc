@@ -146,6 +146,17 @@ set_clock_groups -asynchronous \
   -group [get_clocks spi_clk_i] \
   -group [get_clocks jtag_tck_i]
 
+# clk_main (35.036 MHz), clk_aon (10 MHz, ISP) and the 100 MHz SPI master clock come from one
+# MMCM, so Vivado times their crossings as synchronous. At 35 MHz the closest edges are 0.2 ns
+# apart, which is meaningless for these crossings: all 827 timed paths end in Chisel async FIFO
+# synchronisers / capture registers or the SpiMaster reset synchroniser
+# (fpga/report_cdc_vcu118.tcl on the 2026-10-06 build). Bound only the data path, to the 10 ns
+# period of the fastest clock involved. The SPI clock is looked up by pin because its name
+# (clk_spim_unbuf) is derived by Vivado.
+set vcu118_mmcm_side_clks [get_clocks -of_objects [get_pins {i_clkgen/i_clkgen/pll/CLKOUT4 i_clkgen/i_clkgen/pll/CLKOUT2}]]
+set_max_delay -datapath_only 10.000 -from [get_clocks clk_main] -to $vcu118_mmcm_side_clks
+set_max_delay -datapath_only 10.000 -from $vcu118_mmcm_side_clks -to [get_clocks clk_main]
+
 # -----------------------------------------------------------------------------
 # DDR4 write data fanout replication (same as Nexus)
 # -----------------------------------------------------------------------------
