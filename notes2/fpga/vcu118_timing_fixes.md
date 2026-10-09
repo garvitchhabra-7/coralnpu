@@ -14,6 +14,18 @@ Written 2026-10-06 for the agent picking this up.
 
 ---
 
+## Status (2026-10-09)
+
+Build `fpga/bitstreams/vcu118_highmem_rom_2026-10-07_183310/` (group A XDC applied) works on the
+board. WNS −1.557 ns, 614 failing endpoints (was 1538), 2 pulse-width (−0.095 ns):
+- **A fixed:** `clk_main ↔ clk_aon / clk_spim_unbuf` now +5.8 to +7.8 ns.
+- **B:** `mmcm_clkout0 → mmcm_clkout0` −1.078 ns (was −1.715).
+- **C:** `c0_sys_clk_p → mmcm_clkout0 / 6` −1.557 / −0.997 ns.
+- **New lead for C (and maybe B):** `impl_runme.log` has `CRITICAL WARNING [Vivado 12-4739]` for
+  `set_false_path` / `set_max_delay` in the MIG's own `ddr_system_bd_ddr4_0_0.xdc` (lines 257,
+  258, 277, ...): their `*/*/*/*/*/...` pin patterns don't match the MIG's depth in this
+  hierarchy, so some MIG timing exceptions are not applied. Investigate before anything else on C.
+
 ## Status (2026-10-07): DEFERRED
 
 **Decision (user, 2026-10-07):** leave the remaining violations as they are for now and move on to
@@ -228,21 +240,37 @@ BRAM use per SLR is 71% / 62% / 84% (SLR0/1/2).
 unused, and the SPI masters aren't used by the demo. This is not yet proven: run step 1 below first.
 
 **Fix (XDC only, no RTL):**
-1. Check that every crossing is synchronised. You run this on the routed checkpoint, outside FHS,
-   with about 20 GB of RAM:
-   ```tcl
-   open_checkpoint fpga/bitstreams/vcu118_highmem_rom_2026-10-06_201108/chip_vcu118_routed.dcp
-   report_cdc -from [get_clocks clk_main] -to [get_clocks {clk_aon clk_spim_unbuf}] -details -file cdc_main_to_x.rpt
-   report_cdc -from [get_clocks {clk_aon clk_spim_unbuf}] -to [get_clocks clk_main] -details -file cdc_x_to_main.rpt
+1. Check that every crossing is synchronised (prepared 2026-10-07). Run on the routed checkpoint,
+   outside FHS, with about 20 GB of RAM:
+   ```bash
+   vivado -mode batch -nojournal -nolog -source fpga/report_cdc_vcu118.tcl \
+     -tclargs fpga/bitstreams/vcu118_highmem_rom_2026-10-06_201108/chip_vcu118_routed.dcp
    ```
-   Go on only if neither report shows "Unsafe" or "Unknown" crossings.
-2. Add to `fpga/pins_vcu118.xdc`:
+   It writes `cdc_main_to_x.rpt`, `cdc_x_to_main.rpt` and `cdc_summary.txt` next to the
+   checkpoint. The summary has the `report_cdc` severity counts and every timed path between the
+   clocks, grouped by endpoint cell; groups that don't look like synchronisers are marked `??`.
+   Go on only if there are no Critical ("Unsafe"/"Unknown") crossings and no unexplained `??` rows.
+   **Result (2026-10-07):** `report_cdc` lists all four clock pairs as "Safely Timed", 0 Unsafe,
+   0 Unknown. Caveat: for clocks from the same MMCM, "Safely Timed" only means Vivado times them
+   as related clocks; it doesn't check for synchronisers. The real evidence is the endpoint
+   grouping in `cdc_summary.txt`: all 827 paths (330 + 497, all failing against the 0.208 ns
+   requirement) end in Chisel async FIFO capture registers (`io_deq_bits_deq_bits_reg/cdc_reg`),
+   Gray-pointer or valid synchronisers (`output_chain/sync*`), in `spi_master`,
+   `spi_master_flash` and the ISP crossbar FIFOs. The one `??` row,
+   `spi_master/spi_reset_REG_reg`, is the first flop of the 2-flop reset synchroniser in
+   `SpiMaster.scala:339`. Gate passed.
+2. **Applied 2026-10-07** to `fpga/pins_vcu118.xdc`, after the `set_clock_groups` block:
    ```tcl
-   # clk_main, clk_aon and clk_spim_unbuf share the MMCM, but at 35 MHz their edges have no useful
-   # alignment. All crossings go through Chisel async FIFOs; bound the data path only.
-   set_max_delay -datapath_only 10.0 -from [get_clocks clk_main] -to [get_clocks {clk_aon clk_spim_unbuf}]
-   set_max_delay -datapath_only 10.0 -from [get_clocks {clk_aon clk_spim_unbuf}] -to [get_clocks clk_main]
+   # clk_main (35.036 MHz), clk_aon (10 MHz, ISP) and the 100 MHz SPI master clock come from one
+   # MMCM, so Vivado times their crossings as synchronous. At 35 MHz the closest edges are 0.2 ns
+   # apart, which is meaningless for the Chisel async FIFOs every crossing goes through
+   # (checked with fpga/report_cdc_vcu118.tcl). Bound only the data path, to the 10 ns period of
+   # the fastest clock involved.
+   set vcu118_mmcm_side_clks [get_clocks -of_objects [get_pins {i_clkgen/i_clkgen/pll/CLKOUT4 i_clkgen/i_clkgen/pll/CLKOUT2}]]
+   set_max_delay -datapath_only 10.000 -from [get_clocks clk_main] -to $vcu118_mmcm_side_clks
+   set_max_delay -datapath_only 10.000 -from $vcu118_mmcm_side_clks -to [get_clocks clk_main]
    ```
+   The SPI clock is looked up by pin because its name (`clk_spim_unbuf`) is derived by Vivado.
    Prefer this to `set_clock_groups -asynchronous`, because it still bounds the async FIFO data path.
 
 ### B. 300 MHz MIG UI domain: SmartConnect MI side and MIG `u_ddr_ui`

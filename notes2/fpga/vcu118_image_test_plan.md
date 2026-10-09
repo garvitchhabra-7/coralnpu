@@ -1,6 +1,9 @@
 # VCU118 — Image Tests (Phase 8): Handoff
 
-Written 2026-10-07 for the agent picking this up.
+Written 2026-10-07, rewritten 2026-10-09 for the agent picking this up. The program-loading problem
+is solved; the next job is running MobileNet on the board.
+
+## Working rules
 
 **First read the "Working rules" section of `notes2/fpga/vcu118_uart_ila_debug.md`.** In short:
 - Don't run Bazel or bitstream builds, Vivado, or touch the board without asking the user. Prepare
@@ -9,186 +12,148 @@ Written 2026-10-07 for the agent picking this up.
   `bazelisk shutdown` when switching between the two.
 - The host `synthesia` is shared. Always select the JTAG cable by serial **`210308B76D4D`**.
 - Do the elab check (`bazelisk build //fpga:build_chip_vcu118_elab_only_highmem_rom`) before any
-  3.5 h bitstream build.
-- Build and archive bitstreams in one step with
-  `bazelisk run //fpga:archive_chip_vcu118_bitstream_highmem_rom`, which copies the outputs to
-  `fpga/bitstreams/vcu118_highmem_rom_<build time>/`.
+  3.5 h bitstream build. Build and archive in one step with
+  `bazelisk run //fpga:archive_chip_vcu118_bitstream_highmem_rom`
+  (→ `fpga/bitstreams/vcu118_highmem_rom_<build time>/`).
+- **Commit messages: no links of any kind.** No `Claude-Session: https://...` trailer, no URLs.
+  The user had them stripped from the whole branch on 2026-10-09. `Co-Authored-By:` is fine.
+- The user prefers 115200 baud for the UART loader (known to work). Don't switch the default.
 
 ---
 
-## Where things stand
+## Where things stand (2026-10-09)
 
 | | |
 |---|---|
-| Board bitstream | `fpga/bitstreams/vcu118_highmem_rom_2026-10-06_201108/` (ROM boot) |
-| Working | ROM autoboot, UART1 on `/dev/ttyUSB4` (115200 8N1), DDR4: the ROM test prints `DDR PASS` |
-| Core | `RvvCoreMiniHighmemAxi`, 1 MB ITCM @ `0x00000000`, 1 MB DTCM @ `0x00100000`, `clk_main` 35 MHz |
-| Other memory | ROM 32 KB @ `0x10000000` (baked into the bitstream), SRAM 4 MB @ `0x20000000`, DDR4 2 GB @ `0x80000000` |
-| DDR calibration status | `gpio_i[0]` (GPIO `DATA_IN` at `0x40030000`, bit 0). Poll it before touching DDR |
-| Not available | SPI program loading (7.3, no FTDI adapter) and RISC-V JTAG (7.5, no adapter on PMOD0) |
-| Timing | not met, deliberately deferred (`vcu118_timing_fixes.md`, section "Results of the 2026-10-06 build") |
+| Board bitstream | `fpga/bitstreams/vcu118_highmem_rom_2026-10-07_183310/`: ROM UART loader, group A timing fix |
+| Program loading | **Works on the board.** `fpga/uart_loader.py` loads ELFs into ITCM/DTCM and raw files into SRAM/DDR over `/dev/ttyUSB4` at 115200 (~11 KB/s), checks every region with a read-back CRC, starts the program and shows its output. See `vcu118_uart_loader.md` |
+| Board tests passed | hello program (ITCM+DTCM), 256 KB random data → DDR with CRC, CPU_RESET → reload |
+| Core | `RvvCoreMiniHighmemAxi` (RVV enabled), `clk_main` 35 MHz (clock table reports 35) |
+| Memory | ITCM 1 MB @ `0x00000000`; DTCM 1 MB @ `0x00100000` (**top 64 KB, `0x001F0000`+, belongs to the loader**: never put loadable data there); ROM 32 KB @ `0x10000000`; SRAM 4 MB @ `0x20000000`; DDR4 2 GB @ `0x80000000` |
+| DDR calibration | `gpio_i[0]` (GPIO `DATA_IN` at `0x40030000`, bit 0). The loader refuses DDR until it's set. A program that touches DDR itself must poll it first |
+| Timing | Not met: WNS −1.557 ns, 614 endpoints, all in the DDR/MIG side (groups B and C in `vcu118_timing_fixes.md`) |
 
-Background: `vcu118_progress.md` (status table at the top), `vcu118_task7_2_uart.md` (how ROM boot
-works), `vcu118_ddr_check.md`.
+Workflow for every run: program the FPGA once (`fpga/program_vcu118.tcl`), then
+`python3 fpga/uart_loader.py --elf <prog.elf> [--data <file>@<addr>]`. After a program finishes the
+core halts: press **CPU_RESET** to get the loader back. No bitstream rebuild is needed for software
+changes.
 
-## The blocker: no way to get a model or images onto the board
+## Next task: MobileNet v1 on the board
 
-The only program path is the 32 KB ROM, and its contents are fixed when the bitstream is built
-(`_VCU118_ROM_VMEM` in `fpga/BUILD`, currently `rom_ddr_test_highmem`). A MobileNet run needs much
-more than that:
-- the TFLite Micro runtime;
-- the model (`tests/cocotb/tutorial/tfmicro/models/mobilenet_v1_0.25_224_int8_dummy.tflite` is
-  300 KB);
-- the tensor arena;
-- the images.
+### What exists
 
-**The user has to choose one of the options below.** Present them, and don't start implementing
-before the choice is made.
+| Item | Where |
+|---|---|
+| Trained MobileNet v1 0.25 224 int8 (597 KB), labels, test image | `demos/image_classification/models/`, `demos/image_classification/test_images/grace_hopper.jpg` |
+| TFLite Micro runner for the software simulator (npusim) | `demos/npu_image_classification/classify_npu.cc`, target `classify_npu_binary` (1 MB/1 MB TCM, RVV-optimised conv kernels; `classify_npu_scalar_binary` = reference kernels). Measured on npusim: ~446 M cycles (RVV), ~653 M (scalar) |
+| Image preprocessing and top-5 printing | `demos/npu_image_classification/run_on_npusim.py`: `preprocess_image()` (resize 224×224 bilinear, uint8 − 128 → int8, flattened HWC), `print_top_k()` (labels are offset by one: `labels[idx + 1]`) |
+| Host reference result | `demos/image_classification/classify.py`, `demos/npu_image_classification/compare.py` |
+| Board helpers | `fpga/sw/uart.h` (UART1 console), `clk.h` (clock table), `gpio.h` (DDR calibration bit); `fpga/sw/uart_loader_hello.c` is a minimal loaded program |
 
----
+At 35 MHz, 446 M cycles is about **13 s per image** (RVV). Scalar would be about 19 s.
 
-## Option 1 — FTDI MPSSE adapter + `nexus_loader` (recommended if an adapter can be had soon)
+### Step 1: an FPGA version of the runner
 
-This is the path the porting plan intended (task 7.3).
+Add `fpga/sw/mobilenet_vcu118.cc` with its target in `fpga/BUILD`. The `fpga/sw` libraries are
+private to `fpga/`, so keep the target there, with `dtcm_size_kbytes = 1024` and
+`itcm_size_kbytes = 1024`. Start from `classify_npu.cc` and change:
 
-**Hardware:**
-- An FT232H breakout or C232HM-DDHSL-0 cable (~€20–30). An FT4232H module also works.
-- Wire it onto PMOD1 (J52):
+1. **Console:** `printf` doesn't reach the board UART. Call `uart_init()` and print with
+   `uart_puts` / `uart_puthex32`. Print, in this order:
+   - a banner;
+   - `interpreter.arena_used_bytes()` after `AllocateTensors()`;
+   - `mcycle` before and after `Invoke()` (read the CSR as in `fpga/sw/rom_ddr_test.c`);
+   - the top-5 class indices with their int8 scores, and the input buffer's CRC32 so the host can
+     check that the image arrived intact;
+   - a final `MOBILENET DONE` line for `--expect`.
+2. **Input image from DDR:** don't keep `inference_input` in `.data`.
+   - Read the image from a fixed DDR address, e.g. `0x80100000`, 150528 bytes of int8 HWC.
+   - Poll `gpio_read() & 1` first. Touching DDR before calibration hangs the crossbar.
+   - The host loads the image with `--data image.bin@0x80100000`, and the loader verifies it with a
+     read-back CRC.
+3. **Keep large zero buffers out of the ELF's loaded data.** `uart_loader.py` sends every
+   `PT_LOAD` segment's file contents. A zero-initialised array with
+   `__attribute__((section(".extdata")))` or `section(".data")` is (very likely) stored in the
+   ELF as real zeros. The 4 MB arena would then take about 6 minutes to send.
+   - Put the arena in **`.extbss`** (NOLOAD, in SRAM).
+   - Put other scratch buffers in `.bss` / `.noinit`.
+   - Check with `readelf -lW <elf>` that the `FileSiz` of every segment is small. Expect about
+     597 KB of model plus a few hundred KB of code in ITCM.
+   - Note that the CRT clears only the DTCM `.bss`. Nothing clears `.extbss`; TFLite Micro doesn't
+     need a zeroed arena.
+4. **Arena size:** start at 2 MB in `.extbss`, then shrink to `arena_used_bytes()` plus margin once
+   it's measured. If it fits in about 900 KB, try DTCM (`.bss`) as well: faster, and it decides
+   the SRAM size question below.
+5. **Model:** keep it compiled in (`mobilenet_v1_0_25_224_int8_lib`, `.rodata` → ITCM). It linked
+   into 1 MB of ITCM for npusim with the same TCM sizes. If the link fails with
+   `region ITCM overflowed`, put the model array in `.ddr_data` (loaded to DDR automatically), or
+   load the `.tflite` with `--data` into DDR and pass its address to `tflite::GetModel`.
+6. **Kernels:** use the RVV path (the board core has RVV). If results look wrong, rebuild with
+   `-DSCALAR_ONLY` and compare. That separates kernel problems from memory or DDR problems.
 
-  | FTDI | Signal | PMOD1 | FPGA pin |
-  |---|---|---|---|
-  | ADBUS0 | `spi_clk_i` | PMOD1_0 | N28 |
-  | ADBUS3 | `spi_csb_i` | PMOD1_1 | M30 |
-  | ADBUS1 | `spi_mosi_i` | PMOD1_2 | N30 |
-  | ADBUS2 | `spi_miso_o` | PMOD1_3 | P30 |
+### Step 2: host side
 
-  - Connect a common ground.
-  - Leave ADBUS7 unconnected.
-  - Check the physical PMOD pin numbering against UG1224 before wiring. Only the FPGA-pin side of
-    this table has been verified.
+1. **Preprocessing:** write a small script, e.g. `fpga/mobilenet_prep.py`, that reuses
+   `preprocess_image()` and writes the int8 image as a raw `.bin`. The host's `/usr/bin/python3`
+   (3.6) has no PIL/numpy. Either run the script in the demos' Python environment
+   (`demos/*/pyproject.toml`) or in Nix, or produce the `.bin` files once and keep them.
+   `uart_loader.py` itself must stay stdlib-only.
+2. **Run** (user runs it on the board):
+   ```bash
+   D=bazel-out/k8-fastbuild-ST-dd8dc713f32d/bin/fpga   # find -L bazel-out -name '<target>.elf' if it moved
+   python3 fpga/uart_loader.py --elf $D/mobilenet_vcu118.elf \
+     --data grace_hopper.bin@0x80100000 --expect "MOBILENET DONE" --monitor 120
+   ```
+   Loading takes about 1–2 min (the model's ~600 KB in ITCM plus the 150 KB image).
+3. **Check:** map the printed top-5 indices to `imagenet_labels.txt` (index + 1) and compare them
+   with the host reference (`demos/image_classification/classify.py` on the same image). The scores
+   should match npusim exactly (both run the same kernels on the same int8 input).
+4. **Later, several images per load:** loop over N images at consecutive DDR addresses, so the
+   model is loaded only once.
 
-**What the SPI slave can reach:** `spi2tlul` can write the TCMs (`coralnpu_device`), the SRAM, and
-**DDR directly** (`CrossbarConfig.scala`, `connections`). So the host can put the program in ITCM and
-images in DDR, start the core, and read results back.
+### Step 3: decisions to bring back to the user
 
-**Software work** (details in `vcu118_progress.md`, section "7.4 `nexus_loader`"):
-1. Replace the hard-coded `kFtdiPid = 0x6011` (`sw/utils/nexus_loader/main.cc:68`) with a `--pid`
-   flag. The FT232H is `0x6014`.
-2. Add a `--spi_divisor` flag. The SPI clock is hard-coded to 30 MHz (`main.cc:392-400`), but the
-   design constrains `spi_clk_i` for 12 MHz. Use ≤ 10 MHz.
-3. Build it with a small Nix script outside Bazel (no `libftdi1` / `libusb` headers on the host, and
-   Nix libraries must not be linked against RHEL8 glibc through Bazel).
-4. Always pass `--highmem` (CSR base `0x200000`). Never use `--reset` on VCU118; use `--soft_reset`.
+1. **SRAM size.** Report the measured `arena_used_bytes()`. Shrinking the 4 MB SRAM (VCU118 build
+   only) is the planned fix for timing group B. The size must change consistently in
+   `hdl/chisel/src/soc/SoCChiselConfig.scala:265`, `hdl/chisel/src/soc/CrossbarConfig.scala:118`,
+   `SRAM_END` in `fpga/sw/rom_uart_loader.c`, `SRAM` in `fpga/uart_loader.py`, and `EXTMEM` in
+   `toolchain/coralnpu_tcm.ld.tpl` (shared: VCU118 builds need their own value, so don't break the
+   cocotb tests that use 4 MB). Ask the user before changing anything.
+2. **Which images to demo.** Only `grace_hopper.jpg` exists.
 
-**Bitstream:**
-- The current ROM-boot bitstream releases the core immediately into the ROM test, which ends in an
-  endless heartbeat. For loading, use the ITCM-boot variant (`build_chip_vcu118_bitstream_highmem`,
-  no autoboot): the core waits until `nexus_loader --start_core`.
-- That variant was last built on 2026-09-25, before the 35 MHz, DDR-clock and 2 GB-segment changes.
-  **Rebuild it**: `bazelisk run //fpga:archive_chip_vcu118_bitstream_highmem`.
-- Alternatively, the ROM program could hand over to ITCM on a flag. Then the ROM bitstream could be
-  kept, but that is more work.
+### Don't
 
-**Pros:** no FPGA change other than the rebuild above. Fast loading, and every reload is quick.
-This is the long-term workflow for the demo.
+- Don't run the full MobileNet in the Verilator FPGA sim. It runs at about 2,300 cycles/s, so one
+  inference (~446 M cycles) would take days. Debug logic on npusim (`run_on_npusim`), then go
+  straight to the board.
+- Don't change the ROM loader or rebuild the bitstream for this task. Everything above is software
+  loaded over UART.
 
-**Cons:** needs hardware and the three `nexus_loader` patches.
+## Timing work (parallel, lower priority)
 
-## Option 2 — JTAG-to-AXI master over the existing JTAG cable (no new hardware)
+See `vcu118_timing_fixes.md`, section "Status (2026-10-09)". The open lead:
+`impl_runme.log` of the 2026-10-07 build shows `CRITICAL WARNING [Vivado 12-4739]` for
+`set_false_path` / `set_max_delay` in the MIG's own `ddr_system_bd_ddr4_0_0.xdc` (lines 257, 258,
+277, ...). Their `*/*/*/*/*/...` pin patterns don't match the MIG's depth in our hierarchy, so
+some MIG timing exceptions aren't applied. That probably explains group C and may account for part
+of group B. You can investigate this read-only on the routed checkpoint, without a build.
 
-Add Xilinx's JTAG-to-AXI master IP to `ddr_system_bd` as a second SmartConnect input. Vivado's
-Hardware Manager can then write into DDR over the JTAG cable already attached (through the debug hub
-the MIG already uses).
+## Risks
 
-**Block design changes** (in `~/workspace/test_project`, the same procedure as the 2026-10-06
-SmartConnect changes; see `fpga/ip/ddr4_vcu118/GENERATING_DDR4_IP.md`):
-```tcl
-create_bd_cell -type ip -vlnv xilinx.com:ip:jtag_axi jtag_axi_0
-set_property -dict [list CONFIG.PROTOCOL 0 CONFIG.M_AXI_DATA_WIDTH 32] [get_bd_cells jtag_axi_0]   ;# AXI4
-set_property CONFIG.NUM_SI 2 [get_bd_cells smartconnect_0]
-connect_bd_intf_net [get_bd_intf_pins jtag_axi_0/M_AXI] [get_bd_intf_pins smartconnect_0/S01_AXI]
-connect_bd_net [get_bd_pins ddr4_0/addn_ui_clkout1] [get_bd_pins jtag_axi_0/aclk]    ;# 100 MHz, like S00
-connect_bd_net [get_bd_ports c0_ddr4_aresetn_0] [get_bd_pins jtag_axi_0/aresetn]
-assign_bd_address
-set_property offset 0x80000000 [get_bd_addr_segs {jtag_axi_0/Data/SEG_ddr4_0_C0_DDR4_ADDRESS_BLOCK}]
-set_property range 2G          [get_bd_addr_segs {jtag_axi_0/Data/SEG_ddr4_0_C0_DDR4_ADDRESS_BLOCK}]
-validate_bd_design
-```
-- Treat these commands as a starting point, not tested commands: check the property names
-  against the IP in Vivado 2025.2.
-- Keep the S00 segment at 2 GB from `0x80000000`.
-- Regenerate, then copy the new DCPs and `rtl/ddr_system_bd.v` into the repo. The jtag_axi IP gets
-  its own OOC checkpoint, which `vivado_ddr4_vcu118_setup.tcl` and `ddr4_vcu118.core` must also
-  load.
-- The wrapper's ports should not change. Check this with the same port diff as before.
+- **DDR data path is not timing-clean (group B).** The loader's read-back CRC covers loaded data.
+  If inference results look wrong, first rerun the 256 KB DDR CRC test from
+  `vcu118_uart_loader.md`, and compare with an input placed in DTCM instead of DDR.
+- **Don't touch `0x80000000` before calibration:** an early access hangs the crossbar.
+- **The loader banner prints once,** at configuration or after CPU_RESET. It doesn't matter for
+  loading: `uart_loader.py` doesn't need it.
+- **Only one program may hold `/dev/ttyUSB4`.** Close `screen` before running `uart_loader.py`.
 
-**ROM bootloader** (replaces `rom_ddr_test_highmem` as the ROM image, or extends it):
-1. Banner, then wait for calibration on `gpio_i[0]`.
-2. Poll a mailbox word in DDR, e.g. at `0x80000000`, until the host writes a magic value. The host
-   writes it **last**, after the payload.
-3. Read a header (payload address, length, entry point, CRC32), check the CRC, copy the program to
-   ITCM/DTCM and jump to it. Print the CRC result on the UART.
+## History: how loading was chosen (2026-10-07)
 
-**Verify before building on it:**
-- Whether the core can write ITCM with stores. If not, the program has to run from DDR or be loaded
-  differently.
-- Whether it can fetch instructions from DDR. It does fetch from ROM over the bus, so DDR probably
-  works, but slowly.
-
-**Host side:**
-- A Vivado Tcl script, modelled on `fpga/check_ddr_vcu118.tcl` (select cable `210308B76D4D`, load
-  the `.ltx`), that uses `create_hw_axi_txn` / `run_hw_axi` to write a binary file in bursts.
-- JTAG-to-AXI is slow, roughly 100 KB/s or less. A few-MB model and images take seconds to minutes,
-  which is acceptable for tests.
-
-**Pros:** works with what is on the desk, and needs no RTL change in the Chisel subsystem.
-
-**Cons:**
-- A block design change and IP regeneration, a new bootloader, a host script, and a 3.5 h rebuild.
-- Every load goes through Vivado.
-- The written data passes through the 300 MHz MIG side that doesn't meet timing (group B), so CRC
-  every load.
-
-## Option 3 — Everything in ROM (not recommended)
-
-Enlarge the ROM and bake the program, model and images into the bitstream.
-- This needs a crossbar change (the `rom` range is 32 KB in `CrossbarConfig.scala`) and megabytes
-  of extra BRAM on a chip that is already congested (BRAM 71/62/84% per SLR).
-- Every new image or model means a 3.5 h rebuild.
-- Mention it only for completeness.
-
----
-
-## Decisions to get from the user
-
-1. **Option 1 or 2.** Option 1 if an FTDI adapter can arrive within a few days, otherwise option 2.
-2. **Which model and input size.**
-   - The existing asset is MobileNet v1 0.25 224 int8 (300 KB, "dummy" weights,
-     `tests/cocotb/tutorial/tfmicro/models/`).
-   - Real classification results need a model with trained weights and preprocessed images.
-3. **How much on-chip SRAM the plan needs.**
-   - The linker template puts `.extdata` in SRAM (`EXTMEM`, `0x20000000`, 4 MB;
-     `toolchain/coralnpu_tcm.ld.tpl`). It also has a `DDR` region, and `coralnpu_v2_binary` can
-     place the heap in `DTCM`, `EXTMEM` or `DDR`.
-   - Shrinking the 4 MB SRAM is the planned fix for the remaining timing problems (group B in
-     `vcu118_timing_fixes.md`). So whatever is decided here also decides that fix.
-
-## Existing software to start from
-
-- `tests/cocotb/tutorial/tfmicro/run_partial_mobilenet.cc` and its BUILD targets
-  (`run_mobilenet_v1_025_partial_binary`): a TFLite Micro MobileNet run, with the tensor arena in
-  `.extdata`. It was written for the simulator, not the FPGA.
-- `sw/utils/tflite_runner/`: a generic runner using the optimised `sw/opt/litert-micro` kernels.
-- `fpga/sw/uart.h`, `clk.h`, `gpio.h`: UART1 console, clock table and GPIO (DDR calibration bit).
-- `fpga/sw/rom_ddr_test.c`: an example of a ROM program with a trap handler, a calibration wait and
-  UART reporting.
-
-## Risks to keep in mind
-
-- **Timing is not met** (`vcu118_timing_fixes.md`).
-  - Group A (clock-domain crossings at 35 MHz) is almost certainly harmless.
-  - Group B (the 300 MHz MIG side) is on the DDR data path. Put a CRC on everything loaded into
-    DDR. If inference results look wrong, rerun the ROM DDR test before debugging the model.
-- **Don't touch `0x80000000` before calibration:** an early access hangs the crossbar. Poll
-  `gpio_i[0]`.
-- **Open the UART before programming the FPGA:** the banner prints only once.
+The options were an FTDI MPSSE adapter with `nexus_loader` over SPI (no adapter on hand), a
+JTAG-to-AXI master in the DDR block design (IP regeneration, Vivado for every load), or baking
+everything into ROM (a 3.5 h rebuild per change). The user chose a fourth option, the ROM UART
+loader: no new hardware, no block design change. If faster loading is ever needed, the SPI path
+(`spi2tlul` can reach TCMs, SRAM and DDR; details in `vcu118_progress.md`, "7.4 `nexus_loader`")
+is still available with an FT232H on PMOD1 (`spi_clk_i` N28, `spi_csb_i` M30, `spi_mosi_i` N30,
+`spi_miso_o` P30).
