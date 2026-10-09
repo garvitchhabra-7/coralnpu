@@ -26,7 +26,6 @@ module chip_verilator #(
     input clk_i,
     input rst_ni,
     input prim_mubi_pkg::mubi4_t scanmode_i,
-    input top_pkg::uart_sideband_i_t [1 : 0] uart_sideband_i,
     output top_pkg::uart_sideband_o_t [1 : 0] uart_sideband_o
 );
 
@@ -100,6 +99,12 @@ module chip_verilator #(
 
   assign uart0_tx = uart_sideband_o[0].cio_tx;
   assign uart1_tx = uart_sideband_o[1].cio_tx;
+
+  // Host -> SoC direction: the uartdpi models drive the UART RX inputs, so
+  // programs (e.g. the ROM UART loader) can receive from the pty.
+  top_pkg::uart_sideband_i_t [1 : 0] uart_sideband_i;
+  assign uart_sideband_i[0].cio_rx = uart0_rx;
+  assign uart_sideband_i[1].cio_rx = uart1_rx;
 
   logic tck_i, tms_i, trst_ni, td_i, td_o;
   jtagdpi i_jtagdpi (
